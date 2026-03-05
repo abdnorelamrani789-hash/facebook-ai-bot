@@ -1,34 +1,31 @@
-name: Facebook AI Bot Auto Post
+name: Facebook AI Bot
 
-# تشغيل تلقائي + إمكانية التشغيل اليدوي
 on:
   schedule:
-    # 3 مرات يومياً: 09:00، 15:00، 21:00 UTC
-    - cron: '0 9,15,21 * * *'
-  workflow_dispatch: # تشغيل يدوي إذا بغيت
+    # تشغيل البوت 3 مرات يومياً: 09:00، 15:00، 21:00 UTC
+    - cron: '0 9 * * *'
+    - cron: '0 15 * * *'
+    - cron: '0 21 * * *'
+  workflow_dispatch:  # تشغيل يدوي من GitHub
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      # نسخ الملفات
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # إعداد بايثون
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: 3.11
 
-      # تثبيت المكتبات
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # تشغيل البوت
       - name: Run Facebook AI Bot
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
