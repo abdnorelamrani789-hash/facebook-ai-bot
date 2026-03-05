@@ -78,37 +78,56 @@ def generate_content_and_image_prompt(keyword):
         print(f"Error generating content: {e}")
         return None, keyword
 
-# --- تحميل الصورة ---
-def download_image(keyword):
+# --- تحميل الصورة (Unsplash + Pollinations fallback) ---
+def download_image(keyword, content_prompt=None):
     used_hashes = load_json(USED_IMAGES_FILE)
 
-    urls = [
-        f"https://source.unsplash.com/1080x1080/?{keyword},technology",
-        f"https://source.unsplash.com/1080x1080/?{keyword},computer",
-        f"https://source.unsplash.com/1080x1080/?{keyword},cybersecurity",
-        f"https://source.unsplash.com/1080x1080/?{keyword},ai",
-        f"https://source.unsplash.com/1080x1080/?{keyword},network"
+    # --- قائمة keywords قصيرة للصور الحقيقية ---
+    keywords_for_unsplash = [
+        "cybersecurity",
+        "network",
+        "AI technology",
+        "programming",
+        "tech office",
+        "server room"
     ]
-    random.shuffle(urls)
-    urls.append("https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080")  # fallback
+    keywords_for_unsplash.append(keyword)  # إضافة keyword الرئيسي
+    random.shuffle(keywords_for_unsplash)
 
-    for url in urls:
+    # --- محاولة Unsplash أولاً ---
+    for k in keywords_for_unsplash:
         try:
+            url = f"https://source.unsplash.com/1080x1080/?{k}"
             r = requests.get(url, timeout=15)
             img = Image.open(BytesIO(r.content)).convert("RGB")
             img.save(TEMP_IMAGE, format="JPEG")
             img_hash = get_image_hash(TEMP_IMAGE)
-
             if img_hash in used_hashes:
-                print("Image already used! Trying next option...")
+                print(f"Image from Unsplash ({k}) already used! Trying next...")
                 continue
-
             used_hashes.append(img_hash)
             save_json(USED_IMAGES_FILE, used_hashes)
-            print(f"Image downloaded successfully from {url}")
+            print(f"Image downloaded successfully from Unsplash ({k})")
             return True
         except Exception as e:
-            print(f"Failed to download image from {url}: {e}")
+            print(f"Failed to download image from Unsplash ({k}): {e}")
+
+    # --- fallback: توليد صورة AI عبر Pollinations ---
+    if content_prompt:
+        try:
+            encoded_prompt = urllib.parse.quote(content_prompt)
+            ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
+            r = requests.get(ai_url, timeout=30)
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+            img.save(TEMP_IMAGE, format="JPEG")
+            img_hash = get_image_hash(TEMP_IMAGE)
+            if img_hash not in used_hashes:
+                used_hashes.append(img_hash)
+                save_json(USED_IMAGES_FILE, used_hashes)
+            print("Image generated successfully from AI (Pollinations)")
+            return True
+        except Exception as e:
+            print(f"Failed to generate AI image: {e}")
 
     print("No new image could be downloaded. The post will be text only.")
     return False
@@ -131,13 +150,9 @@ def post_to_facebook(message):
 
 # --- الرد على التعليقات ---
 def reply_to_comments():
-    # مثال بسيط: سيقرأ التعليقات من سجل قديم ويرد إذا لم يتم الرد
     replied = load_json(REPLIED_COMMENTS_FILE)
-    # هنا يمكن إضافة منطق API للحصول على التعليقات الجديدة والرد عليها
-    # سنبقيه placeholder حاليا
+    # placeholder للردود
     print("Replying to comments (force old comments)...")
-    # بعد الرد على تعليق معين:
-    # replied.append(comment_id)
     save_json(REPLIED_COMMENTS_FILE, replied)
 
 # --- Main ---
@@ -147,11 +162,11 @@ if __name__ == "__main__":
     keyword = get_trending_keyword()
     print(f"Trending keyword: {keyword}")
 
-    content, image_keyword = generate_content_and_image_prompt(keyword)
+    content, image_prompt = generate_content_and_image_prompt(keyword)
     if content:
         print("Generating content...")
 
-        download_image(image_keyword)
+        download_image(keyword, content_prompt=image_prompt)
 
         print("Posting to Facebook...")
         fb_result = post_to_facebook(content)
