@@ -1,6 +1,5 @@
 import os
 import requests
-import urllib.parse
 import time
 import json
 import random
@@ -78,11 +77,10 @@ def generate_content_and_image_prompt(keyword):
         print(f"Error generating content: {e}")
         return None, keyword
 
-# --- تحميل الصورة (Unsplash + Pollinations fallback) ---
-def download_image(keyword, content_prompt=None):
+# --- تحميل الصورة من Unsplash مع التحقق ومنع التكرار ---
+def download_image(keyword):
     used_hashes = load_json(USED_IMAGES_FILE)
 
-    # --- قائمة keywords قصيرة للصور الحقيقية ---
     keywords_for_unsplash = [
         "cybersecurity",
         "network",
@@ -91,67 +89,52 @@ def download_image(keyword, content_prompt=None):
         "tech office",
         "server room"
     ]
-    keywords_for_unsplash.append(keyword)  # إضافة keyword الرئيسي
+    keywords_for_unsplash.append(keyword)
     random.shuffle(keywords_for_unsplash)
 
-    # --- محاولة Unsplash أولاً ---
-    for k in keywords_for_unsplash:
-        try:
-            url = f"https://source.unsplash.com/1080x1080/?{k}"
-            r = requests.get(url, timeout=15)
-            img = Image.open(BytesIO(r.content)).convert("RGB")
-            img.save(TEMP_IMAGE, format="JPEG")
-            img_hash = get_image_hash(TEMP_IMAGE)
-            if img_hash in used_hashes:
-                print(f"Image from Unsplash ({k}) already used! Trying next...")
-                continue
-            used_hashes.append(img_hash)
-            save_json(USED_IMAGES_FILE, used_hashes)
-            print(f"Image downloaded successfully from Unsplash ({k})")
-            return True
-        except Exception as e:
-            print(f"Failed to download image from Unsplash ({k}): {e}")
+    max_attempts_per_keyword = 5
 
-    # --- fallback: توليد صورة AI عبر Pollinations ---
-    if content_prompt:
-        try:
-            encoded_prompt = urllib.parse.quote(content_prompt)
-            ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
-            r = requests.get(ai_url, timeout=30)
-            img = Image.open(BytesIO(r.content)).convert("RGB")
-            img.save(TEMP_IMAGE, format="JPEG")
-            img_hash = get_image_hash(TEMP_IMAGE)
-            if img_hash not in used_hashes:
+    for k in keywords_for_unsplash:
+        for attempt in range(max_attempts_per_keyword):
+            try:
+                url = f"https://source.unsplash.com/1080x1080/?{k}"
+                r = requests.get(url, timeout=15, allow_redirects=True)
+
+                # التحقق من كون الـ response صورة
+                if 'image' not in r.headers.get('Content-Type',''):
+                    print(f"Attempt {attempt+1} for ({k}) returned non-image content")
+                    continue
+
+                img = Image.open(BytesIO(r.content)).convert("RGB")
+                img.save(TEMP_IMAGE, format="JPEG")
+                img_hash = get_image_hash(TEMP_IMAGE)
+
+                if img_hash in used_hashes:
+                    print(f"Image from Unsplash ({k}) already used! Trying next...")
+                    continue
+
                 used_hashes.append(img_hash)
                 save_json(USED_IMAGES_FILE, used_hashes)
-            print("Image generated successfully from AI (Pollinations)")
-            return True
-        except Exception as e:
-            print(f"Failed to generate AI image: {e}")
+                print(f"Image downloaded successfully from Unsplash ({k})")
+                return True
 
-    print("No new image could be downloaded. The post will be text only.")
-    return False
+            except Exception as e:
+                print(f"Attempt {attempt+1} failed for ({k}): {e}")
+
+    raise Exception("Failed to download a valid image from Unsplash after multiple attempts")
 
 # --- نشر على فيسبوك ---
 def post_to_facebook(message):
-    if os.path.exists(TEMP_IMAGE):
-        with open(TEMP_IMAGE, "rb") as img_file:
-            files = {'source': ('post.jpg', img_file, 'image/jpeg')}
-            payload = {'caption': message, 'access_token': FB_PAGE_ACCESS_TOKEN}
-            response = requests.post(f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
-                                     data=payload, files=files)
-            return response.json()
-    else:
-        # نشر نص فقط
-        payload = {'message': message, 'access_token': FB_PAGE_ACCESS_TOKEN}
-        response = requests.post(f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/feed",
-                                 data=payload)
+    with open(TEMP_IMAGE, "rb") as img_file:
+        files = {'source': ('post.jpg', img_file, 'image/jpeg')}
+        payload = {'caption': message, 'access_token': FB_PAGE_ACCESS_TOKEN}
+        response = requests.post(f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
+                                 data=payload, files=files)
         return response.json()
 
 # --- الرد على التعليقات ---
 def reply_to_comments():
     replied = load_json(REPLIED_COMMENTS_FILE)
-    # placeholder للردود
     print("Replying to comments (force old comments)...")
     save_json(REPLIED_COMMENTS_FILE, replied)
 
@@ -166,7 +149,12 @@ if __name__ == "__main__":
     if content:
         print("Generating content...")
 
-        download_image(keyword, content_prompt=image_prompt)
+        # هذه المرة الصورة ضرورية، أي فشل → Exception
+        try:
+            download_image(keyword)
+        except Exception as e:
+            print(f"Critical: Could not download a valid image. Aborting post. {e}")
+            exit(1)
 
         print("Posting to Facebook...")
         fb_result = post_to_facebook(content)
