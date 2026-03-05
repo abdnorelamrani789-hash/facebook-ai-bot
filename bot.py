@@ -1,27 +1,37 @@
 import os
 import requests
 
+# جلب المفاتيح من GitHub Secrets
 FB_PAGE_ID = os.getenv('FB_PAGE_ID')
 FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 def generate_content():
-    # جربنا gemini-1.0-pro حيت هو الأكثر توافقاً عالمياً
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key={GEMINI_API_KEY}"
+    # الرابط المباشر لـ Gemini 1.5 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {'Content-Type': 'application/json'}
+    
     data = {
-        "contents": [{"parts": [{"text": "اكتب معلومة تقنية مفيدة بالدارجة المغربية في سطر واحد."}]}]
+        "contents": [{
+            "parts": [{
+                "text": "اكتب منشوراً قصيراً جداً لفيسبوك بالدارجة المغربية. الموضوع: معلومة تقنية مفيدة أو نصيحة في البرمجة. استخدم الإيموجي."
+            }]
+        }]
     }
     
-    response = requests.post(url, json=data, headers=headers)
-    res_json = response.json()
-    
-    if 'candidates' in res_json:
-        return res_json['candidates'][0]['content']['parts'][0]['text']
-    else:
-        # إيلا فشل، غنعطيوه نص احتياطي باش ما يوقفش البوت ونشوفو واش فيسبوك خدام
-        print("Gemini failed, using backup text.")
-        return "واش كتعرف بلي البرمجة هي لغة المستقبل؟ تعلم كودينغ دابا! 💻"
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        res_json = response.json()
+        
+        if 'candidates' in res_json and len(res_json['candidates']) > 0:
+            return res_json['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"Gemini API Error: {res_json}")
+            return "واش كتعرف بلي تعلم البرمجة كيبدا غير بخطوة بسيطة؟ ابدا اليوم! 🚀"
+            
+    except Exception as e:
+        print(f"Connection Error: {e}")
+        return "تقنية بالدارجة: معلومة جديدة في الطريق إليكم! 💻"
 
 def post_to_facebook(message):
     url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/feed"
@@ -34,6 +44,6 @@ def post_to_facebook(message):
 
 if __name__ == "__main__":
     content = generate_content()
-    print(f"Content to post: {content}")
+    print(f"Content Generated: {content}")
     result = post_to_facebook(content)
     print("Facebook Result:", result)
