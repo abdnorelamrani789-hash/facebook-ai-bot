@@ -8,8 +8,9 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 def generate_content():
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
-    prompt = "اكتب منشوراً فيسبوكياً قصيراً جداً بالدارجة المغربية عن معلومة تقنية. استخدم إيموجي."
+    # استعملنا gemini-1.5-flash حيت هو اللي خدام دابا
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = "اكتب منشوراً فيسبوكياً قصيراً جداً بالدارجة المغربية عن معلومة تقنية مفيدة. استخدم إيموجي."
     response = model.generate_content(prompt)
     return response.text
 
@@ -23,7 +24,10 @@ def post_to_facebook(message):
     return r.json()
 
 if __name__ == "__main__":
-    content = generate_content()
-    print("Generated Content:", content)
-    result = post_to_facebook(content)
-    print("Facebook Response:", result) # هادا هو المهم دابا
+    try:
+        content = generate_content()
+        print("Generated:", content)
+        result = post_to_facebook(content)
+        print("Facebook Result:", result)
+    except Exception as e:
+        print("Error details:", e)
