@@ -1,129 +1,218 @@
 import os
-import random
-import json
 import requests
-from io import BytesIO
-from PIL import Image
+import urllib.parse
 import time
 
-# إعدادات صفحة فيسبوك
-PAGE_ID = os.environ.get("PAGE_ID")
-PAGE_TOKEN = os.environ.get("PAGE_TOKEN")
+# =========================
+# Environment Variables
+# =========================
+FB_PAGE_ID = os.getenv("FB_PAGE_ID")
+FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ملفات التاريخ
-HISTORY_FILE = "history.json"
+if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
+    raise Exception("Missing required environment variables")
 
-# المواضيع التقنية
-TOPICS = [
-    "Artificial Intelligence",
-    "Cybersecurity",
-    "Programming",
-    "Linux",
-    "Cloud Computing",
-    "Data Science",
-    "Ethical Hacking",
-    "Web Development",
-    "Automation"
-]
+TEMP_IMAGE = "temp_image.jpg"
 
-# تحميل وحفظ التاريخ
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    return {"topics": [], "images": []}
 
-def save_history(history):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f)
+# =========================
+# Generate Content
+# =========================
+def generate_content_and_image_prompt():
 
-# اختيار موضوع جديد
-def get_topic():
-    history = load_history()
-    available = [t for t in TOPICS if t not in history.get("topics", [])]
-    if not available:
-        history["topics"] = []
-        available = TOPICS
-    topic = random.choice(available)
-    history["topics"].append(topic)
-    save_history(history)
-    return topic
+    model = "models/gemini-3-flash-preview"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
-# توليد المنشور
-def generate_post(topic):
-    return f"""
-📌 موضوع اليوم: {topic}
+    prompt = """
+أنت خبير في الأمن المعلوماتي والشبكات.
 
-هاذ الموضوع مهم بزاف في العالم التقني. غادي نشارك معاكم أهم النقاط بطريقة مبسطة:
+اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة "تقنية بالدارجة".
 
-• شرح مفهوم {topic} بطريقة مفهومة للجميع.
-• كيفاش يمكن تستعملو فحياتك اليومية أو العمل.
-• نصائح مهمة واحترافية لتحسين مهاراتك في {topic}.
+القواعد:
+- ابدأ المنشور مباشرة بدون مقدمة.
+- اشرح الفكرة بوضوح وبطريقة مبسطة.
+- استعمل تنسيق جيد وفواصل.
+- أضف بعض الإيموجي التقنية.
+- في النهاية أضف سؤالاً لتحفيز التفاعل.
 
-💬 واش عندك تجربة مع {topic}? شاركنا فالكومنت!
+في آخر سطر أكتب:
+
+IMAGE_PROMPT: وصف إنجليزي لصورة تقنية احترافية متعلقة بالموضوع.
 """
 
-# تحميل صورة من Unsplash Source API بطريقة مضمونة
-def get_image(topic):
-    history = load_history()
-    # الكلمات المفتاحية القصيرة لضمان التحميل
-    keywords = [topic.replace(" ", "+"), "technology", "computer", "AI"]
-    random.shuffle(keywords)
-    
-    for kw in keywords:
-        url = f"https://source.unsplash.com/1080x1080/?{kw}"
-        if url in history["images"]:
-            continue
-        try:
-            r = requests.get(url, timeout=10)
-            img = Image.open(BytesIO(r.content))
-            img.save("post_image.jpg")
-            history["images"].append(url)
-            save_history(history)
-            return "post_image.jpg"
-        except Exception as e:
-            print(f"Attempt failed for {url}: {e}")
-            continue
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
 
-    # fallback مضمون
-    fallback_url = "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080"
-    r = requests.get(fallback_url, timeout=10)
-    img = Image.open(BytesIO(r.content))
-    img.save("post_image.jpg")
-    return "post_image.jpg"
-
-# نشر على فيسبوك
-def post_to_facebook(text, image_file):
-    url = f"https://graph.facebook.com/{PAGE_ID}/photos"
     try:
-        with open(image_file, "rb") as img:
-            payload = {"caption": text, "access_token": PAGE_TOKEN}
-            files = {"source": img}
-            r = requests.post(url, data=payload, files=files)
-            print(r.json())
+
+        response = requests.post(
+            url,
+            json=data,
+            headers=headers,
+            timeout=30
+        )
+
+        res_json = response.json()
+
+        if "candidates" not in res_json:
+            print("Gemini API error:", res_json)
+            return None, None
+
+        full_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+
+        if "IMAGE_PROMPT:" in full_text:
+            text, img_prompt = full_text.split("IMAGE_PROMPT:", 1)
+            return text.strip(), img_prompt.strip()
+
+        return full_text.strip(), "cybersecurity network infrastructure digital security"
+
     except Exception as e:
-        print(f"Error posting to Facebook: {e}")
+        print("Gemini Error:", e)
+        return None, None
 
-# الرد على التعليقات (يمكن تطوير لاحق)
-def reply_to_comments():
-    pass
 
-# تشغيل البوت 3 مرات يومياً
-def run_bot():
-    for _ in range(3):
-        topic = get_topic()
-        print("Topic:", topic)
-        text = generate_post(topic)
-        image_file = get_image(topic)
-        if not image_file:
-            print("Critical: Could not download a valid image. Aborting post.")
-            continue
-        print("Image downloaded:", image_file)
-        post_to_facebook(text, image_file)
-        reply_to_comments()
-        print("Post published and comments replied\n")
-        time.sleep(2)  # تأخير صغير بين المنشورات
+# =========================
+# Download Image
+# =========================
+def download_image(prompt):
+
+    encoded_prompt = urllib.parse.quote(prompt)
+
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
+
+    print("Generating image...")
+    print(image_url)
+
+    time.sleep(15)
+
+    try:
+
+        img_res = requests.get(image_url, timeout=40)
+
+        if img_res.status_code == 200 and "image" in img_res.headers.get("Content-Type", ""):
+
+            with open(TEMP_IMAGE, "wb") as f:
+                f.write(img_res.content)
+
+            return True
+
+        else:
+            raise Exception("Invalid image response")
+
+    except Exception as e:
+
+        print("Primary image failed:", e)
+
+        fallback = "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1080&q=80"
+
+        try:
+
+            img_res = requests.get(fallback, timeout=30)
+
+            with open(TEMP_IMAGE, "wb") as f:
+                f.write(img_res.content)
+
+            return True
+
+        except Exception as e:
+
+            print("Fallback failed:", e)
+            return False
+
+
+# =========================
+# Validate Image
+# =========================
+def validate_image():
+
+    try:
+
+        with open(TEMP_IMAGE, "rb") as f:
+            header = f.read(4)
+
+        if header[:3] == b"\xff\xd8\xff":
+            return True
+
+        print("Invalid JPEG header")
+
+        return False
+
+    except:
+        return False
+
+
+# =========================
+# Post to Facebook
+# =========================
+def post_to_facebook(message):
+
+    fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
+
+    try:
+
+        with open(TEMP_IMAGE, "rb") as img_file:
+
+            files = {
+                "source": ("post.jpg", img_file, "image/jpeg")
+            }
+
+            payload = {
+                "caption": message,
+                "access_token": FB_PAGE_ACCESS_TOKEN
+            }
+
+            response = requests.post(
+                fb_url,
+                data=payload,
+                files=files,
+                timeout=30
+            )
+
+        return response.json()
+
+    except Exception as e:
+
+        print("Facebook API Error:", e)
+        return None
+
+
+# =========================
+# Main
+# =========================
+def main():
+
+    print("Generating content...")
+
+    content, img_prompt = generate_content_and_image_prompt()
+
+    if not content:
+        print("Failed to generate content")
+        return
+
+    print("Content generated successfully")
+
+    if not download_image(img_prompt):
+        print("Image generation failed")
+        return
+
+    if not validate_image():
+        print("Image validation failed")
+        return
+
+    print("Posting to Facebook...")
+
+    result = post_to_facebook(content)
+
+    print("Facebook response:")
+    print(result)
+
+    # Remove temp image
+    try:
+        os.remove(TEMP_IMAGE)
+    except:
+        pass
+
 
 if __name__ == "__main__":
-    print("Starting bot...")
-    run_bot()
+    main()
