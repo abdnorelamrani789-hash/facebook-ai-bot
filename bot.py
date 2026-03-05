@@ -1,23 +1,25 @@
 import os
 import requests
-import urllib.parse
+import io
+import time
 
 # جلب المفاتيح من GitHub Secrets
 FB_PAGE_ID = os.getenv('FB_PAGE_ID')
 FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+HF_API_KEY = os.getenv('HF_API_KEY') # تأكد من هاد السمية فـ GitHub
 
-def generate_content_and_image_prompt():
+def generate_content_and_prompt():
     # استعمال Gemini 3 Flash Preview
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = """
-    أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة 'تقنية بالدارجة'.
+    أنت خبير تقني مغربي. اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة 'تقنية بالدارجة'.
     الشروط:
-    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع تكتب أي مقدمة بحال 'هاك المنشور').
-    2. المنشور يجب أن يكون تقنياً ومفيداً (شرح، خطوات، نصائح).
-    3. في آخر المنشور، أضف سطراً يبدأ بكلمة IMAGE_PROMPT: متبوعة بوصف دقيق بالإنجليزية للصورة (مثال: cybersecurity hacker matrix style).
+    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع منعاً باتاً كتابة أي مقدمات).
+    2. حافظ على الطول والشرح المعمق (نقاط واضحة، نصائح تقنية).
+    3. في آخر سطر، اكتب عبارة IMAGE_PROMPT: متبوعة بوصف دقيق بالإنجليزية لصورة تقنية سينمائية تناسب المحتوى.
     """
     
     headers = {'Content-Type': 'application/json'}
@@ -30,46 +32,52 @@ def generate_content_and_image_prompt():
         
         if "IMAGE_PROMPT:" in full_text:
             parts = full_text.split("IMAGE_PROMPT:")
-            post_content = parts[0].strip()
-            img_description = parts[1].strip()
-        else:
-            post_content = full_text
-            img_description = "futuristic technology cyber security"
-            
-        return post_content, img_description
+            return parts[0].strip(), parts[1].strip()
+        return full_text, "futuristic cyber security technology"
     except:
         return None, None
 
-def post_to_facebook(message, img_description):
-    # 1. إنشاء رابط الصورة
-    encoded_prompt = urllib.parse.quote(img_description)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
+def generate_image_hf(prompt):
+    # غنستعملو موديل FLUX.1-schnell حيت سريع بزاف وكيولد صور واعرين
+    API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
     
-    # 2. تحميل الصورة محلياً (باش فيسبوك يلقاها واجدة)
-    img_data = requests.get(image_url).content
-    with open('temp_image.jpg', 'wb') as handler:
-        handler.write(img_data)
+    # محاولة توليد الصورة
+    response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
     
-    # 3. إرسال الصورة كملف (File Upload)
+    if response.status_code == 200:
+        return response.content
+    else:
+        print(f"HF Error: {response.text}")
+        return None
+
+def post_to_facebook(message, image_bytes):
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     
-    with open('temp_image.jpg', 'rb') as img_file:
-        files = {
-            'source': img_file # هنا صيفطنا الملف حقيقي ماشي غير رابط
-        }
-        payload = {
-            'caption': message,
-            'access_token': FB_PAGE_ACCESS_TOKEN
-        }
-        response = requests.post(fb_url, data=payload, files=files)
-        return response.json()
+    files = {
+        'source': ('image.jpg', image_bytes, 'image/jpeg')
+    }
+    payload = {
+        'caption': message,
+        'access_token': FB_PAGE_ACCESS_TOKEN
+    }
+    return requests.post(fb_url, data=payload, files=files).json()
 
 if __name__ == "__main__":
-    content, img_prompt = generate_content_and_image_prompt()
+    # 1. توليد النص والوصف باستعمال Gemini 3
+    content, img_prompt = generate_content_and_prompt()
     
     if content:
-        print(f"Content ready. Sending to Facebook...")
-        result = post_to_facebook(content, img_prompt)
-        print("Facebook Result:", result)
+        print(f"Generating image for: {img_prompt}")
+        # 2. توليد الصورة باستعمال Hugging Face
+        image_data = generate_image_hf(img_prompt)
+        
+        if image_data:
+            print("Image ready. Posting to Facebook...")
+            # 3. النشر لفيسبوك
+            result = post_to_facebook(content, image_data)
+            print("Facebook Result:", result)
+        else:
+            print("Failed to generate image.")
     else:
         print("Failed to generate content.")
