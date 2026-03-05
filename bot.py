@@ -7,8 +7,8 @@ FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 def generate_content():
-    # استعمال رابط API المباشر ديال Gemini
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # استعملنا v1 (النسخة المستقرة) وموديل gemini-pro (الأكثر توافقاً)
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
     headers = {'Content-Type': 'application/json'}
     data = {
         "contents": [{
@@ -19,10 +19,12 @@ def generate_content():
     response = requests.post(url, json=data, headers=headers)
     res_json = response.json()
     
-    if 'candidates' in res_json:
+    # محاولة استخراج النص مع معالجة الأخطاء
+    if 'candidates' in res_json and len(res_json['candidates']) > 0:
         return res_json['candidates'][0]['content']['parts'][0]['text']
     else:
-        raise Exception(f"Gemini Error: {res_json}")
+        # إيلا كان المشكل من الموديل، غيقول لينا شنو هو بالضبط
+        raise Exception(f"Gemini API Error: {res_json}")
 
 def post_to_facebook(message):
     url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/feed"
