@@ -4,13 +4,15 @@ import json
 import requests
 from io import BytesIO
 from PIL import Image
-from urllib.parse import quote
 
-# معلومات صفحة الفيسبوك
+# إعدادات صفحة فيسبوك
 PAGE_ID = os.environ.get("PAGE_ID")
 PAGE_TOKEN = os.environ.get("PAGE_TOKEN")
 
-# قائمة المواضيع التقنية
+# ملفات التاريخ
+HISTORY_FILE = "history.json"
+
+# المواضيع التقنية
 TOPICS = [
     "Artificial Intelligence",
     "Cybersecurity",
@@ -23,10 +25,49 @@ TOPICS = [
     "Automation"
 ]
 
-# ملفات التاريخ
-HISTORY_FILE = "history.json"
-COMMENTS_FILE = "replied_comments.json"
+# روابط الصور الحقيقية لكل موضوع
+IMAGES = {
+    "Artificial Intelligence": [
+        "https://cdn.pixabay.com/photo/2017/07/10/15/04/artificial-intelligence-2495506_1280.jpg",
+        "https://cdn.pixabay.com/photo/2020/04/28/21/11/artificial-intelligence-5103689_1280.jpg",
+        "https://cdn.pixabay.com/photo/2019/09/25/10/05/ai-4503604_1280.jpg"
+    ],
+    "Cybersecurity": [
+        "https://cdn.pixabay.com/photo/2019/07/29/10/47/cyber-4368792_1280.jpg",
+        "https://cdn.pixabay.com/photo/2018/08/07/18/14/hacker-3584824_1280.jpg",
+        "https://cdn.pixabay.com/photo/2017/06/20/18/27/cyber-security-2421284_1280.jpg"
+    ],
+    "Programming": [
+        "https://cdn.pixabay.com/photo/2015/05/31/12/14/programming-791298_1280.jpg",
+        "https://cdn.pixabay.com/photo/2017/08/10/03/49/computer-2617543_1280.jpg"
+    ],
+    "Linux": [
+        "https://cdn.pixabay.com/photo/2017/05/10/19/19/ubuntu-2306804_1280.jpg",
+        "https://cdn.pixabay.com/photo/2017/08/10/03/48/linux-2617542_1280.jpg"
+    ],
+    "Cloud Computing": [
+        "https://cdn.pixabay.com/photo/2018/03/01/12/32/data-3190378_1280.jpg",
+        "https://cdn.pixabay.com/photo/2019/07/08/10/57/server-4320051_1280.jpg"
+    ],
+    "Data Science": [
+        "https://cdn.pixabay.com/photo/2018/03/06/22/16/data-3205577_1280.jpg",
+        "https://cdn.pixabay.com/photo/2017/10/11/17/24/data-2838920_1280.jpg"
+    ],
+    "Ethical Hacking": [
+        "https://cdn.pixabay.com/photo/2017/01/10/19/05/hacker-1968687_1280.jpg",
+        "https://cdn.pixabay.com/photo/2017/03/21/19/03/hacker-2168230_1280.jpg"
+    ],
+    "Web Development": [
+        "https://cdn.pixabay.com/photo/2015/01/08/18/30/web-593359_1280.jpg",
+        "https://cdn.pixabay.com/photo/2016/10/28/22/20/web-1779994_1280.jpg"
+    ],
+    "Automation": [
+        "https://cdn.pixabay.com/photo/2016/11/29/03/48/robot-1869237_1280.jpg",
+        "https://cdn.pixabay.com/photo/2016/10/31/22/53/robotic-1782352_1280.jpg"
+    ]
+}
 
+# تحميل التاريخ
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
@@ -49,9 +90,9 @@ def get_topic():
     save_history(history)
     return topic
 
-# توليد منشور طويل واحترافي بالدارجة المغربية
+# توليد المنشور الاحترافي
 def generate_post(topic):
-    posts_templates = {
+    templates = {
         "Artificial Intelligence": f"""
 🤖 الذكاء الاصطناعي ({topic}) كيغير العالم بسرعة!
 
@@ -75,78 +116,56 @@ def generate_post(topic):
 💡 نصيحة: استعمال كلمات سر قوية وتفعيل المصادقة الثنائية (2FA) كيحميك من كثير من المشاكل.
 
 💬 واش كتظن الأمن السيبراني غادي يزيد الطلب عليه؟
-""",
-        "Programming": f"""
-💻 البرمجة ({topic}) من أهم المهارات فالعصر الرقمي!
-
-أي تطبيق كتستعملو فالهاتف ولا موقع فالإنترنت مبني على البرمجة.
-
-🚀 تعلم البرمجة كيعطي فرص كثيرة:
-• تطوير التطبيقات.
-• الذكاء الاصطناعي.
-• تحليل البيانات.
-
-💡 نصيحة: Python وJavaScript هما البداية الممتازة لأي مبتدئ.
-
-💬 واش فكرتي تبدا تتعلم البرمجة؟
 """
     }
-    return posts_templates.get(topic, f"موضوع تقني حول {topic} بطريقة مفهومة للجميع.")
+    return templates.get(topic, f"موضوع تقني حول {topic} بطريقة مفهومة للجميع.")
 
-# البحث عن صورة حقيقية مناسبة من Pixabay/Unsplash
+# تحميل صورة
 def get_image(topic):
-    search_keywords = [
-        topic,
-        topic + " technology",
-        topic + " computer",
-        topic + " AI" if topic=="Artificial Intelligence" else topic
-    ]
     history = load_history()
-    for keyword in search_keywords:
-        query = quote(keyword)
-        url = f"https://source.unsplash.com/1080x1080/?{query}"
-        try:
-            r = requests.get(url, timeout=15)
-            img = Image.open(BytesIO(r.content))
-            if img.format in ["JPEG", "PNG", "JPG"]:
-                # تحقق من عدم تكرار الصورة
-                if url not in history["images"]:
-                    history["images"].append(url)
-                    save_history(history)
-                    img.save("post_image.jpg")
-                    return "post_image.jpg"
-        except:
-            continue
-    return None
+    available_images = [img for img in IMAGES.get(topic, []) if img not in history["images"]]
+    if not available_images:
+        history["images"] = []
+        available_images = IMAGES.get(topic, [])
+    if not available_images:
+        return None
+    img_url = random.choice(available_images)
+    try:
+        r = requests.get(img_url, timeout=10)
+        img = Image.open(BytesIO(r.content))
+        img.save("post_image.jpg")
+        history["images"].append(img_url)
+        save_history(history)
+        return "post_image.jpg"
+    except:
+        return None
 
+# نشر على الفيسبوك
 def post_to_facebook(text, image_file):
     url = f"https://graph.facebook.com/{PAGE_ID}/photos"
     with open(image_file, "rb") as img:
-        payload = {
-            "caption": text,
-            "access_token": PAGE_TOKEN
-        }
+        payload = {"caption": text, "access_token": PAGE_TOKEN}
         files = {"source": img}
         r = requests.post(url, data=payload, files=files)
         print(r.json())
 
 def reply_to_comments():
-    # يمكن إضافة الرد التلقائي على التعليقات لاحقاً
-    pass
+    pass  # تطوير لاحق
 
+# تشغيل البوت 3 مرات يومياً
 def run_bot():
-    print("Starting bot...")
-    topic = get_topic()
-    print("Topic:", topic)
-    text = generate_post(topic)
-    image_file = get_image(topic)
-    if not image_file:
-        print("Critical: Could not download a valid image. Aborting post.")
-        return
-    print("Image downloaded:", image_file)
-    post_to_facebook(text, image_file)
-    reply_to_comments()
-    print("Post published and comments replied")
+    for _ in range(3):
+        topic = get_topic()
+        print("Topic:", topic)
+        text = generate_post(topic)
+        image_file = get_image(topic)
+        if not image_file:
+            print("Critical: Could not download a valid image. Aborting post.")
+            continue
+        print("Image downloaded:", image_file)
+        post_to_facebook(text, image_file)
+        reply_to_comments()
+        print("Post published and comments replied\n")
 
 if __name__ == "__main__":
     run_bot()
