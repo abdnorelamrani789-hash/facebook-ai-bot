@@ -2,6 +2,7 @@ import os
 import requests
 import random
 import json
+import hashlib
 from io import BytesIO
 from PIL import Image
 
@@ -15,6 +16,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TEMP_IMAGE = "temp.jpg"
 HISTORY_FILE = "history.json"
 REPLIED_COMMENTS_FILE = "replied_comments.json"
+USED_IMAGES_FILE = "used_images.json"
 
 # -----------------------
 # التعامل مع ملفات JSON
@@ -94,9 +96,17 @@ IMAGE_KEYWORD: كلمة انجليزية تمثل موضوع الصورة
     return content, keyword
 
 # -----------------------
-# تحميل الصورة مع fallback و تحويل JPEG
+# حساب hash للصورة
+# -----------------------
+def get_image_hash(img_path):
+    with open(img_path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+# -----------------------
+# تحميل الصورة مع fallback + منع التكرار
 # -----------------------
 def download_image(keyword):
+    used_hashes = load_json(USED_IMAGES_FILE)
     urls = [
         f"https://source.unsplash.com/1080x1080/?{keyword},technology",
         "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080"  # fallback
@@ -106,11 +116,18 @@ def download_image(keyword):
             r = requests.get(url, timeout=15)
             img = Image.open(BytesIO(r.content)).convert("RGB")
             img.save(TEMP_IMAGE, format="JPEG")
+
+            img_hash = get_image_hash(TEMP_IMAGE)
+            if img_hash in used_hashes:
+                print("Image already used! Trying next option...")
+                continue  # جرب الصورة التالية
+            used_hashes.append(img_hash)
+            save_json(USED_IMAGES_FILE, used_hashes)
             print(f"Image downloaded successfully from {url}")
             return
         except Exception as e:
             print(f"Failed to download image from {url}: {e}")
-    print("No image could be downloaded. The post will be text only.")
+    print("No new image could be downloaded. The post will be text only.")
 
 # -----------------------
 # نشر المنشور على فيسبوك
@@ -137,7 +154,7 @@ def post_to_facebook(message):
 # -----------------------
 # الرد التلقائي على التعليقات
 # -----------------------
-def reply_to_comments():
+def reply_to_comments(force=False):
     replied = load_json(REPLIED_COMMENTS_FILE)
     try:
         feed_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/feed?access_token={FB_PAGE_ACCESS_TOKEN}"
@@ -148,7 +165,7 @@ def reply_to_comments():
             comments = requests.get(comments_url).json().get("data", [])
             for c in comments:
                 comment_id = c["id"]
-                if comment_id in replied:
+                if not force and comment_id in replied:
                     continue
                 message = random.choice([
                     "شكراً على تعليقك 🙏",
@@ -170,14 +187,19 @@ def main():
     print("Generating content...")
     content, keyword = generate_content()
     print("Keyword:", keyword)
+
     print("Downloading image...")
     download_image(keyword)
+
     print("Posting to Facebook...")
     post_to_facebook(content)
-    print("Replying to comments...")
-    reply_to_comments()
+
+    print("Replying to comments (force old comments)...")
+    reply_to_comments(force=True)
+
     if os.path.exists(TEMP_IMAGE):
         os.remove(TEMP_IMAGE)
+
     print("Done!")
 
 if __name__ == "__main__":
