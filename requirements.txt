@@ -1,2 +1,3 @@
 requests
 Pillow
+pytrends==4.11.0
