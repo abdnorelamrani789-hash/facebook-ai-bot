@@ -4,6 +4,7 @@ import json
 import requests
 from io import BytesIO
 from PIL import Image
+import time
 
 # إعدادات صفحة فيسبوك
 PAGE_ID = os.environ.get("PAGE_ID")
@@ -25,56 +26,6 @@ TOPICS = [
     "Automation"
 ]
 
-# روابط الصور الحقيقية لكل موضوع (زيادة عدد الروابط لتقليل التكرار)
-IMAGES = {
-    "Artificial Intelligence": [
-        "https://cdn.pixabay.com/photo/2017/07/10/15/04/artificial-intelligence-2495506_1280.jpg",
-        "https://cdn.pixabay.com/photo/2020/04/28/21/11/artificial-intelligence-5103689_1280.jpg",
-        "https://cdn.pixabay.com/photo/2019/09/25/10/05/ai-4503604_1280.jpg",
-        "https://cdn.pixabay.com/photo/2018/01/18/07/09/artificial-3089735_1280.jpg"
-    ],
-    "Cybersecurity": [
-        "https://cdn.pixabay.com/photo/2019/07/29/10/47/cyber-4368792_1280.jpg",
-        "https://cdn.pixabay.com/photo/2018/08/07/18/14/hacker-3584824_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/06/20/18/27/cyber-security-2421284_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/01/10/19/05/hacker-1968687_1280.jpg"
-    ],
-    "Programming": [
-        "https://cdn.pixabay.com/photo/2015/05/31/12/14/programming-791298_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/08/10/03/49/computer-2617543_1280.jpg",
-        "https://cdn.pixabay.com/photo/2014/05/02/21/50/code-336583_1280.jpg"
-    ],
-    "Linux": [
-        "https://cdn.pixabay.com/photo/2017/05/10/19/19/ubuntu-2306804_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/08/10/03/48/linux-2617542_1280.jpg"
-    ],
-    "Cloud Computing": [
-        "https://cdn.pixabay.com/photo/2018/03/01/12/32/data-3190378_1280.jpg",
-        "https://cdn.pixabay.com/photo/2019/07/08/10/57/server-4320051_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/08/07/10/52/cloud-2602832_1280.jpg"
-    ],
-    "Data Science": [
-        "https://cdn.pixabay.com/photo/2018/03/06/22/16/data-3205577_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/10/11/17/24/data-2838920_1280.jpg",
-        "https://cdn.pixabay.com/photo/2016/11/29/09/32/data-1869306_1280.jpg"
-    ],
-    "Ethical Hacking": [
-        "https://cdn.pixabay.com/photo/2017/01/10/19/05/hacker-1968687_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/03/21/19/03/hacker-2168230_1280.jpg",
-        "https://cdn.pixabay.com/photo/2016/11/29/03/48/robot-1869237_1280.jpg"
-    ],
-    "Web Development": [
-        "https://cdn.pixabay.com/photo/2015/01/08/18/30/web-593359_1280.jpg",
-        "https://cdn.pixabay.com/photo/2016/10/28/22/20/web-1779994_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/08/10/03/48/programming-2617541_1280.jpg"
-    ],
-    "Automation": [
-        "https://cdn.pixabay.com/photo/2016/11/29/03/48/robot-1869237_1280.jpg",
-        "https://cdn.pixabay.com/photo/2016/10/31/22/53/robotic-1782352_1280.jpg",
-        "https://cdn.pixabay.com/photo/2017/01/12/21/20/factory-1971917_1280.jpg"
-    ]
-}
-
 # تحميل وحفظ التاريخ
 def load_history():
     if os.path.exists(HISTORY_FILE):
@@ -89,7 +40,7 @@ def save_history(history):
 # اختيار موضوع جديد
 def get_topic():
     history = load_history()
-    available = [t for t in TOPICS if t not in history["topics"]]
+    available = [t for t in TOPICS if t not in history.get("topics", [])]
     if not available:
         history["topics"] = []
         available = TOPICS
@@ -109,39 +60,36 @@ def generate_post(topic):
 • كيفاش يمكن تستعملو فحياتك اليومية أو العمل.
 • نصائح مهمة واحترافية لتحسين مهاراتك في {topic}.
 
-💬 واش عندك تجربة مع {topic}؟ شاركنا فالكومنت!
+💬 واش عندك تجربة مع {topic}? شاركنا فالكومنت!
 """
 
-# تحميل صورة صالحة
+# تحميل صورة من Unsplash Source API
 def get_image(topic):
     history = load_history()
-    possible_images = IMAGES.get(topic, [])
-    random.shuffle(possible_images)
+    keywords = [topic, f"{topic},technology", f"{topic},computer", f"{topic},AI"]
+    random.shuffle(keywords)
     
-    for img_url in possible_images:
-        if img_url in history["images"]:
+    for kw in keywords:
+        url = f"https://source.unsplash.com/1080x1080/?{kw}"
+        if url in history["images"]:
             continue
         try:
-            r = requests.get(img_url, timeout=10)
-            img = Image.open(BytesIO(r.content))
-            img.verify()
+            r = requests.get(url, timeout=10)
             img = Image.open(BytesIO(r.content))
             img.save("post_image.jpg")
-            history["images"].append(img_url)
+            history["images"].append(url)
             save_history(history)
             return "post_image.jpg"
-        except:
+        except Exception as e:
+            print(f"Attempt failed for {url}: {e}")
             continue
-    
+
     # صورة احتياطية عامة
-    fallback_url = "https://cdn.pixabay.com/photo/2015/01/08/18/30/technology-593358_1280.jpg"
-    try:
-        r = requests.get(fallback_url, timeout=10)
-        img = Image.open(BytesIO(r.content))
-        img.save("post_image.jpg")
-        return "post_image.jpg"
-    except:
-        return None
+    fallback_url = "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080"
+    r = requests.get(fallback_url, timeout=10)
+    img = Image.open(BytesIO(r.content))
+    img.save("post_image.jpg")
+    return "post_image.jpg"
 
 # نشر على فيسبوك
 def post_to_facebook(text, image_file):
@@ -170,6 +118,8 @@ def run_bot():
         post_to_facebook(text, image_file)
         reply_to_comments()
         print("Post published and comments replied\n")
+        time.sleep(2)  # تأخير صغير بين المنشورات
 
 if __name__ == "__main__":
+    print("Starting bot...")
     run_bot()
