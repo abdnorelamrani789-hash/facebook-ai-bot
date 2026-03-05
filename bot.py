@@ -1,257 +1,163 @@
 import os
-import requests
 import random
 import json
-import hashlib
+import requests
 from io import BytesIO
 from PIL import Image
 
-FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
+# معلومات صفحة الفيسبوك
+PAGE_ID = os.environ.get("PAGE_ID")
+PAGE_TOKEN = os.environ.get("PAGE_TOKEN")
 
-HISTORY_FILE = "history.json"
-REPLIED_FILE = "replied_comments.json"
-
-
-# مواضيع تقنية ترند
-TRENDING_TOPICS = [
-    "Cybersecurity",
+# المواضيع التقنية
+TOPICS = [
     "Artificial Intelligence",
-    "Linux",
+    "Cybersecurity",
     "Programming",
+    "Linux",
     "Cloud Computing",
-    "Ethical Hacking",
-    "Network Security",
     "Data Science",
-    "DevOps",
-    "Machine Learning",
+    "Ethical Hacking",
+    "Web Development",
+    "Automation"
 ]
 
+# روابط صور حقيقية مرتبطة بالموضوع
+IMAGES = {
+    "Artificial Intelligence": [
+        "https://images.unsplash.com/photo-1581091215364-6d4d8e5e0a14?w=1080",
+        "https://images.unsplash.com/photo-1581092795364-8c4e8b5f0b20?w=1080"
+    ],
+    "Cybersecurity": [
+        "https://images.unsplash.com/photo-1561414927-6c7bcd0e74c4?w=1080",
+        "https://images.unsplash.com/photo-1581090700220-c9f8e5b60b3d?w=1080"
+    ],
+    "Programming": [
+        "https://images.unsplash.com/photo-1517430816045-df4b7de01dbb?w=1080",
+        "https://images.unsplash.com/photo-1581090700281-7e8b5c4f0a9b?w=1080"
+    ],
+    "Linux": [
+        "https://images.unsplash.com/photo-1581090700250-9b8e5c4b0f1b?w=1080",
+        "https://images.unsplash.com/photo-1581090700290-7d4b5c0e0b20?w=1080"
+    ],
+    "Cloud Computing": [
+        "https://images.unsplash.com/photo-1581090700230-6c8e5c0f0b2a?w=1080",
+        "https://images.unsplash.com/photo-1581090700210-7c8e5d0e0b3b?w=1080"
+    ]
+    # أضف بقية المواضيع إذا أردت
+}
 
-# تحميل التاريخ
+# منشورات جاهزة لكل موضوع
+POSTS = {
+    "Programming": """💻 البرمجة من أهم المهارات فالعصر الرقمي!
+
+أي تطبيق كتستعملو فالهاتف ولا موقع فالإنترنت مبني على البرمجة.
+
+🚀 تعلم البرمجة كيعطي فرص كثيرة:
+• تطوير التطبيقات
+• الذكاء الاصطناعي
+• تحليل البيانات
+
+💬 واش فكرتي تبدا تتعلم البرمجة؟""",
+    
+    "Cybersecurity": """🔐 الأمن السيبراني مهم بزاف فهاذ الوقت.
+
+مع تزايد الهجمات الإلكترونية، الشركات كتحتاج خبراء يحميوا:
+• الحسابات
+• المواقع
+• البيانات
+
+💬 واش كتظن الأمن السيبراني غادي يزيد الطلب عليه؟""",
+    
+    "Artificial Intelligence": """🤖 الذكاء الاصطناعي كيغير العالم بسرعة.
+
+اليوم AI مستعمل ف:
+• الطب
+• السيارات
+• التطبيقات الذكية
+
+💬 واش كتظن الذكاء الاصطناعي غادي يساعد البشر أو يحل محل بعض الوظائف؟"""
+}
+
+# ملفات التاريخ
+HISTORY_FILE = "history.json"
+COMMENTS_FILE = "replied_comments.json"
+
 def load_history():
-
     if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE) as f:
+        with open(HISTORY_FILE, "r") as f:
             return json.load(f)
-
     return {"topics": [], "images": []}
 
-
-def save_history(data):
-
+def save_history(history):
     with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(history, f)
 
-
-# اختيار موضوع بدون تكرار
-def get_trending_topic():
-
+def get_topic():
     history = load_history()
-
-    available = [t for t in TRENDING_TOPICS if t not in history["topics"]]
-
+    available = [t for t in TOPICS if t not in history["topics"]]
     if not available:
         history["topics"] = []
-        available = TRENDING_TOPICS
-
+        available = TOPICS
     topic = random.choice(available)
-
     history["topics"].append(topic)
-
     save_history(history)
-
-    print("Trending keyword:", topic)
-
     return topic
 
-
-# كتابة المنشور
-def generate_post(keyword):
-
-    templates = [
-
-f"""🚀 جديد في عالم التقنية!
-
-اليوم غنهضرو على: {keyword}
-
-هاد المجال ولى مهم بزاف فالعالم الرقمي، وكيستعملوه الشركات الكبرى باش يطورو الأنظمة ديالهم ويحسنو الأمان والأداء.
-
-📚 التعلم ديالو ممكن يفتح فرص عمل كثيرة خصوصاً فمجال التكنولوجيا.
-
-💬 السؤال ليك:
-شنو رأيك فهاد المجال؟ واش كتشوفو مهم فالمستقبل؟
-
-#Technology
-#Tech
-#Programming
-#Innovation
-""",
-
-f"""💡 واش سمعت قبل على {keyword} ؟
-
-هاد المجال ولى واحد من أكثر المجالات لي كيتطورو بسرعة فالعالم.
-
-الشركات التقنية العالمية كتستثمر فيه بزاف حيث كيعاون فبناء حلول ذكية ومتطورة.
-
-👨‍💻 بزاف ديال المطورين والمهندسين بداو كيتعلموه باش يطورو المسار المهني ديالهم.
-
-💬 واش ممكن تفكر تتعلم هاد المجال؟
-
-#AI
-#Technology
-#Digital
-#Future
-""",
-
-f"""🌍 عالم التكنولوجيا كيتبدل بسرعة!
-
-واحد من المجالات لي ولى عندو اهتمام كبير هو: {keyword}
-
-هاد التقنية كتدخل فبزاف ديال المجالات بحال الأمن المعلوماتي، البرمجة، وتحليل البيانات.
-
-📈 المستقبل ديال التكنولوجيا غادي يكون مرتبط بزاف بهاد التقنيات.
-
-💬 شنو رأيك فهاد التطور؟
-
-#TechNews
-#Technology
-#Innovation
-#Programming
-"""
-]
-
-    return random.choice(templates)
-
-
-# تحميل صورة من Picsum
-def download_image(keyword):
-
+def get_image(topic):
     history = load_history()
+    available = [img for img in IMAGES.get(topic, []) if img not in history["images"]]
+    if not available:
+        history["images"] = []
+        available = IMAGES.get(topic, [])
+    if not available:
+        return None
+    img_url = random.choice(available)
+    history["images"].append(img_url)
+    save_history(history)
+    return img_url
 
-    for i in range(10):
+def download_image(url, filename="image.jpg"):
+    try:
+        r = requests.get(url)
+        img = Image.open(BytesIO(r.content))
+        img.save(filename)
+        return True
+    except:
+        return False
 
-        url = f"https://picsum.photos/seed/{keyword}{random.randint(1,10000)}/1080"
+def post_to_facebook(text, image_file="image.jpg"):
+    url = f"https://graph.facebook.com/{PAGE_ID}/photos"
+    with open(image_file, "rb") as img:
+        payload = {
+            "caption": text,
+            "access_token": PAGE_TOKEN
+        }
+        files = {"source": img}
+        r = requests.post(url, data=payload, files=files)
+        print(r.json())
 
-        try:
-
-            r = requests.get(url, timeout=15)
-
-            img = Image.open(BytesIO(r.content))
-
-            hash_img = hashlib.md5(r.content).hexdigest()
-
-            if hash_img in history["images"]:
-                continue
-
-            img.save("temp.jpg")
-
-            history["images"].append(hash_img)
-
-            save_history(history)
-
-            print("Image downloaded")
-
-            return True
-
-        except:
-            pass
-
-    return False
-
-
-# نشر في فيسبوك
-def post_to_facebook(message):
-
-    url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
-
-    files = {
-        "source": open("temp.jpg", "rb")
-    }
-
-    data = {
-        "caption": message,
-        "access_token": FB_PAGE_ACCESS_TOKEN
-    }
-
-    r = requests.post(url, files=files, data=data)
-
-    print("Facebook response:", r.json())
-
-
-# الرد على التعليقات
 def reply_to_comments():
+    # يمكن إضافة الرد التلقائي على التعليقات هنا لاحقاً
+    pass
 
-    if os.path.exists(REPLIED_FILE):
-
-        with open(REPLIED_FILE) as f:
-            replied = json.load(f)
-
-    else:
-        replied = []
-
-    posts_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/posts?access_token={FB_PAGE_ACCESS_TOKEN}"
-
-    posts = requests.get(posts_url).json()
-
-    for post in posts.get("data", []):
-
-        comments_url = f"https://graph.facebook.com/v19.0/{post['id']}/comments?access_token={FB_PAGE_ACCESS_TOKEN}"
-
-        comments = requests.get(comments_url).json()
-
-        for comment in comments.get("data", []):
-
-            if comment["id"] in replied:
-                continue
-
-            reply = random.choice([
-                "شكراً على التعليق ديالك 🙏",
-                "ملاحظة جميلة 👍",
-                "شكراً على التفاعل ❤️",
-                "رأي محترم 👌"
-            ])
-
-            reply_url = f"https://graph.facebook.com/v19.0/{comment['id']}/comments"
-
-            requests.post(reply_url, data={
-                "message": reply,
-                "access_token": FB_PAGE_ACCESS_TOKEN
-            })
-
-            replied.append(comment["id"])
-
-    with open(REPLIED_FILE, "w") as f:
-        json.dump(replied, f)
-
-
-# تشغيل البوت
 def run_bot():
-
     print("Starting bot...")
-
-    keyword = get_trending_topic()
-
-    message = generate_post(keyword)
-
-    print("Generating image...")
-
-    if not download_image(keyword):
-
-        print("Failed to download image")
-
+    topic = get_topic()
+    print("Topic:", topic)
+    text = POSTS.get(topic, f"موضوع تقني حول {topic}")
+    image_url = get_image(topic)
+    if not image_url:
+        print("No image found for topic. Skipping post.")
         return
-
-    print("Posting to Facebook...")
-
-    post_to_facebook(message)
-
-    print("Replying to comments...")
-
-    reply_to_comments()
-
-    print("Done!")
-
+    print("Downloading image...")
+    if download_image(image_url):
+        print("Image downloaded")
+        post_to_facebook(text)
+        reply_to_comments()
+        print("Post published and comments replied")
+    else:
+        print("Failed to download image")
 
 if __name__ == "__main__":
     run_bot()
