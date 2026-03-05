@@ -5,6 +5,7 @@ import json
 import hashlib
 from io import BytesIO
 from PIL import Image
+from pytrends.request import TrendReq
 
 # -----------------------
 # إعدادات البوت
@@ -35,32 +36,34 @@ def save_json(file_path, data):
         json.dump(data, f, indent=2)
 
 # -----------------------
+# جلب مواضيع الترند التقنية
+# -----------------------
+def get_trending_keyword():
+    try:
+        pytrends = TrendReq(hl='en-US', tz=360)
+        trending = pytrends.trending_searches(pn='morocco')  # يمكن تغيير الدولة
+        # اختيار مواضيع مرتبطة بالتقنية
+        tech_trends = [t for t in trending[0:20] if any(k in t.lower() for k in ['tech', 'ai', 'cyber', 'linux', 'computer'])]
+        keyword = random.choice(tech_trends) if tech_trends else "technology"
+        return keyword
+    except Exception as e:
+        print(f"Error fetching trending topics: {e}")
+        return "technology"
+
+# -----------------------
 # توليد محتوى المنشور
 # -----------------------
-def generate_content():
+def generate_content(keyword):
     used_topics = load_json(HISTORY_FILE)
-    topics = [
-        "cybersecurity",
-        "wifi security",
-        "computer networks",
-        "linux tips",
-        "ethical hacking",
-        "data protection",
-        "phishing attacks",
-        "dark web",
-        "password security"
-    ]
-    available = [t for t in topics if t not in used_topics]
-    if not available:
-        available = topics
-    topic = random.choice(available)
-
+    if keyword in used_topics:
+        print(f"Keyword {keyword} already used, picking random fallback")
+        keyword = random.choice(["cybersecurity", "linux tips", "data protection", "ethical hacking"])
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
 أنت خبير في التكنولوجيا والأمن المعلوماتي.
 
-اكتب منشوراً تقنياً **بالدارجة المغربية** حول {topic}.
+اكتب منشوراً **بالدارجة المغربية** حول {keyword}.
 
 القواعد:
 - ابدأ مباشرة في الشرح
@@ -78,25 +81,22 @@ IMAGE_KEYWORD: كلمة انجليزية تمثل موضوع الصورة
         r = requests.post(url, json=data)
         res = r.json()
         text = res["candidates"][0]["content"]["parts"][0]["text"]
-
         if "IMAGE_KEYWORD:" in text:
             parts = text.split("IMAGE_KEYWORD:")
             content = "".join(parts[:-1]).strip()
-            keyword = parts[-1].strip()
+            img_keyword = parts[-1].strip()
         else:
-            content, keyword = text, topic
-
+            content, img_keyword = text, keyword
     except Exception as e:
         print(f"Error generating content: {e}")
-        content, keyword = "منشور تجريبي بالدارجة المغربية", topic
+        content, img_keyword = f"منشور عن {keyword} بالدارجة المغربية", keyword
 
-    used_topics.append(topic)
+    used_topics.append(keyword)
     save_json(HISTORY_FILE, used_topics)
-
-    return content, keyword
+    return content, img_keyword
 
 # -----------------------
-# حساب hash للصورة
+# حساب hash الصورة
 # -----------------------
 def get_image_hash(img_path):
     with open(img_path, "rb") as f:
@@ -116,11 +116,10 @@ def download_image(keyword):
             r = requests.get(url, timeout=15)
             img = Image.open(BytesIO(r.content)).convert("RGB")
             img.save(TEMP_IMAGE, format="JPEG")
-
             img_hash = get_image_hash(TEMP_IMAGE)
             if img_hash in used_hashes:
                 print("Image already used! Trying next option...")
-                continue  # جرب الصورة التالية
+                continue
             used_hashes.append(img_hash)
             save_json(USED_IMAGES_FILE, used_hashes)
             print(f"Image downloaded successfully from {url}")
@@ -140,7 +139,6 @@ def post_to_facebook(message):
         r = requests.post(url, data=data)
         print("Facebook response:", r.json())
         return
-
     url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
         with open(TEMP_IMAGE, "rb") as img:
@@ -184,12 +182,16 @@ def reply_to_comments(force=False):
 # تشغيل البوت
 # -----------------------
 def main():
+    print("Fetching trending keyword...")
+    keyword = get_trending_keyword()
+    print("Trending keyword:", keyword)
+
     print("Generating content...")
-    content, keyword = generate_content()
-    print("Keyword:", keyword)
+    content, img_keyword = generate_content(keyword)
+    print("Image keyword:", img_keyword)
 
     print("Downloading image...")
-    download_image(keyword)
+    download_image(img_keyword)
 
     print("Posting to Facebook...")
     post_to_facebook(content)
