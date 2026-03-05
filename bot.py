@@ -63,10 +63,11 @@ def generate_post(topic):
 💬 واش عندك تجربة مع {topic}? شاركنا فالكومنت!
 """
 
-# تحميل صورة من Unsplash Source API
+# تحميل صورة من Unsplash Source API بطريقة مضمونة
 def get_image(topic):
     history = load_history()
-    keywords = [topic, f"{topic},technology", f"{topic},computer", f"{topic},AI"]
+    # الكلمات المفتاحية القصيرة لضمان التحميل
+    keywords = [topic.replace(" ", "+"), "technology", "computer", "AI"]
     random.shuffle(keywords)
     
     for kw in keywords:
@@ -84,7 +85,7 @@ def get_image(topic):
             print(f"Attempt failed for {url}: {e}")
             continue
 
-    # صورة احتياطية عامة
+    # fallback مضمون
     fallback_url = "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080"
     r = requests.get(fallback_url, timeout=10)
     img = Image.open(BytesIO(r.content))
@@ -94,11 +95,14 @@ def get_image(topic):
 # نشر على فيسبوك
 def post_to_facebook(text, image_file):
     url = f"https://graph.facebook.com/{PAGE_ID}/photos"
-    with open(image_file, "rb") as img:
-        payload = {"caption": text, "access_token": PAGE_TOKEN}
-        files = {"source": img}
-        r = requests.post(url, data=payload, files=files)
-        print(r.json())
+    try:
+        with open(image_file, "rb") as img:
+            payload = {"caption": text, "access_token": PAGE_TOKEN}
+            files = {"source": img}
+            r = requests.post(url, data=payload, files=files)
+            print(r.json())
+    except Exception as e:
+        print(f"Error posting to Facebook: {e}")
 
 # الرد على التعليقات (يمكن تطوير لاحق)
 def reply_to_comments():
