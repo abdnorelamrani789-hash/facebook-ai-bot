@@ -4,12 +4,13 @@ import json
 import requests
 from io import BytesIO
 from PIL import Image
+from urllib.parse import quote
 
 # معلومات صفحة الفيسبوك
 PAGE_ID = os.environ.get("PAGE_ID")
 PAGE_TOKEN = os.environ.get("PAGE_TOKEN")
 
-# المواضيع التقنية
+# قائمة المواضيع التقنية
 TOPICS = [
     "Artificial Intelligence",
     "Cybersecurity",
@@ -21,63 +22,6 @@ TOPICS = [
     "Web Development",
     "Automation"
 ]
-
-# روابط صور حقيقية مرتبطة بالموضوع
-IMAGES = {
-    "Artificial Intelligence": [
-        "https://images.unsplash.com/photo-1581091215364-6d4d8e5e0a14?w=1080",
-        "https://images.unsplash.com/photo-1581092795364-8c4e8b5f0b20?w=1080"
-    ],
-    "Cybersecurity": [
-        "https://images.unsplash.com/photo-1561414927-6c7bcd0e74c4?w=1080",
-        "https://images.unsplash.com/photo-1581090700220-c9f8e5b60b3d?w=1080"
-    ],
-    "Programming": [
-        "https://images.unsplash.com/photo-1517430816045-df4b7de01dbb?w=1080",
-        "https://images.unsplash.com/photo-1581090700281-7e8b5c4f0a9b?w=1080"
-    ],
-    "Linux": [
-        "https://images.unsplash.com/photo-1581090700250-9b8e5c4b0f1b?w=1080",
-        "https://images.unsplash.com/photo-1581090700290-7d4b5c0e0b20?w=1080"
-    ],
-    "Cloud Computing": [
-        "https://images.unsplash.com/photo-1581090700230-6c8e5c0f0b2a?w=1080",
-        "https://images.unsplash.com/photo-1581090700210-7c8e5d0e0b3b?w=1080"
-    ]
-    # أضف بقية المواضيع إذا أردت
-}
-
-# منشورات جاهزة لكل موضوع
-POSTS = {
-    "Programming": """💻 البرمجة من أهم المهارات فالعصر الرقمي!
-
-أي تطبيق كتستعملو فالهاتف ولا موقع فالإنترنت مبني على البرمجة.
-
-🚀 تعلم البرمجة كيعطي فرص كثيرة:
-• تطوير التطبيقات
-• الذكاء الاصطناعي
-• تحليل البيانات
-
-💬 واش فكرتي تبدا تتعلم البرمجة؟""",
-    
-    "Cybersecurity": """🔐 الأمن السيبراني مهم بزاف فهاذ الوقت.
-
-مع تزايد الهجمات الإلكترونية، الشركات كتحتاج خبراء يحميوا:
-• الحسابات
-• المواقع
-• البيانات
-
-💬 واش كتظن الأمن السيبراني غادي يزيد الطلب عليه؟""",
-    
-    "Artificial Intelligence": """🤖 الذكاء الاصطناعي كيغير العالم بسرعة.
-
-اليوم AI مستعمل ف:
-• الطب
-• السيارات
-• التطبيقات الذكية
-
-💬 واش كتظن الذكاء الاصطناعي غادي يساعد البشر أو يحل محل بعض الوظائف؟"""
-}
 
 # ملفات التاريخ
 HISTORY_FILE = "history.json"
@@ -93,6 +37,7 @@ def save_history(history):
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f)
 
+# اختيار موضوع جديد
 def get_topic():
     history = load_history()
     available = [t for t in TOPICS if t not in history["topics"]]
@@ -104,29 +49,77 @@ def get_topic():
     save_history(history)
     return topic
 
+# توليد منشور طويل واحترافي بالدارجة المغربية
+def generate_post(topic):
+    posts_templates = {
+        "Artificial Intelligence": f"""
+🤖 الذكاء الاصطناعي ({topic}) كيغير العالم بسرعة!
+
+اليوم AI مستعمل ف:
+• الطب: تحليل الصور الطبية وتشخيص الأمراض.
+• السيارات: القيادة الذاتية وتقنيات السلامة.
+• التطبيقات الذكية: مساعد شخصي، توصيات، وتحسين تجربة المستخدم.
+
+💡 نصيحة: تعلم الأساسيات بحال Python وMachine Learning غادي يعطيك فرص كبيرة فالمستقبل.
+
+💬 واش كتظن الذكاء الاصطناعي غادي يساعد البشر أو يحل محل بعض الوظائف؟
+""",
+        "Cybersecurity": f"""
+🔐 الأمن السيبراني ({topic}) مهم بزاف فهاذ الوقت.
+
+مع تزايد الهجمات الإلكترونية، الشركات كتحتاج خبراء يحميوا:
+• الحسابات والمعلومات الشخصية.
+• المواقع الإلكترونية.
+• بيانات الشركات الحساسة.
+
+💡 نصيحة: استعمال كلمات سر قوية وتفعيل المصادقة الثنائية (2FA) كيحميك من كثير من المشاكل.
+
+💬 واش كتظن الأمن السيبراني غادي يزيد الطلب عليه؟
+""",
+        "Programming": f"""
+💻 البرمجة ({topic}) من أهم المهارات فالعصر الرقمي!
+
+أي تطبيق كتستعملو فالهاتف ولا موقع فالإنترنت مبني على البرمجة.
+
+🚀 تعلم البرمجة كيعطي فرص كثيرة:
+• تطوير التطبيقات.
+• الذكاء الاصطناعي.
+• تحليل البيانات.
+
+💡 نصيحة: Python وJavaScript هما البداية الممتازة لأي مبتدئ.
+
+💬 واش فكرتي تبدا تتعلم البرمجة؟
+"""
+    }
+    return posts_templates.get(topic, f"موضوع تقني حول {topic} بطريقة مفهومة للجميع.")
+
+# البحث عن صورة حقيقية مناسبة من Pixabay/Unsplash
 def get_image(topic):
+    search_keywords = [
+        topic,
+        topic + " technology",
+        topic + " computer",
+        topic + " AI" if topic=="Artificial Intelligence" else topic
+    ]
     history = load_history()
-    available = [img for img in IMAGES.get(topic, []) if img not in history["images"]]
-    if not available:
-        history["images"] = []
-        available = IMAGES.get(topic, [])
-    if not available:
-        return None
-    img_url = random.choice(available)
-    history["images"].append(img_url)
-    save_history(history)
-    return img_url
+    for keyword in search_keywords:
+        query = quote(keyword)
+        url = f"https://source.unsplash.com/1080x1080/?{query}"
+        try:
+            r = requests.get(url, timeout=15)
+            img = Image.open(BytesIO(r.content))
+            if img.format in ["JPEG", "PNG", "JPG"]:
+                # تحقق من عدم تكرار الصورة
+                if url not in history["images"]:
+                    history["images"].append(url)
+                    save_history(history)
+                    img.save("post_image.jpg")
+                    return "post_image.jpg"
+        except:
+            continue
+    return None
 
-def download_image(url, filename="image.jpg"):
-    try:
-        r = requests.get(url)
-        img = Image.open(BytesIO(r.content))
-        img.save(filename)
-        return True
-    except:
-        return False
-
-def post_to_facebook(text, image_file="image.jpg"):
+def post_to_facebook(text, image_file):
     url = f"https://graph.facebook.com/{PAGE_ID}/photos"
     with open(image_file, "rb") as img:
         payload = {
@@ -138,26 +131,22 @@ def post_to_facebook(text, image_file="image.jpg"):
         print(r.json())
 
 def reply_to_comments():
-    # يمكن إضافة الرد التلقائي على التعليقات هنا لاحقاً
+    # يمكن إضافة الرد التلقائي على التعليقات لاحقاً
     pass
 
 def run_bot():
     print("Starting bot...")
     topic = get_topic()
     print("Topic:", topic)
-    text = POSTS.get(topic, f"موضوع تقني حول {topic}")
-    image_url = get_image(topic)
-    if not image_url:
-        print("No image found for topic. Skipping post.")
+    text = generate_post(topic)
+    image_file = get_image(topic)
+    if not image_file:
+        print("Critical: Could not download a valid image. Aborting post.")
         return
-    print("Downloading image...")
-    if download_image(image_url):
-        print("Image downloaded")
-        post_to_facebook(text)
-        reply_to_comments()
-        print("Post published and comments replied")
-    else:
-        print("Failed to download image")
+    print("Image downloaded:", image_file)
+    post_to_facebook(text, image_file)
+    reply_to_comments()
+    print("Post published and comments replied")
 
 if __name__ == "__main__":
     run_bot()
