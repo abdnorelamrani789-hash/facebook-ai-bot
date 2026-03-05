@@ -3,6 +3,8 @@ import requests
 import random
 import json
 import time
+from io import BytesIO
+from PIL import Image
 
 # -----------------------
 # إعدادات البوت
@@ -89,14 +91,14 @@ IMAGE_KEYWORD: كلمة انجليزية تمثل موضوع الصورة
     return content.strip(), keyword.strip()
 
 # -----------------------
-# تحميل الصورة
+# تحميل الصورة وتحويلها ل JPEG
 # -----------------------
 def download_image(keyword):
     url = f"https://source.unsplash.com/1080x1080/?{keyword},technology"
     try:
         r = requests.get(url)
-        with open(TEMP_IMAGE, "wb") as f:
-            f.write(r.content)
+        img = Image.open(BytesIO(r.content)).convert("RGB")  # يحول لأي صيغة JPEG
+        img.save(TEMP_IMAGE, format="JPEG")
     except Exception as e:
         print(f"Error downloading image: {e}")
 
