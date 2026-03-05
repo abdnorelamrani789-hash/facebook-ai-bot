@@ -1,6 +1,5 @@
 import os
 import requests
-import json
 import urllib.parse
 
 # جلب المفاتيح من GitHub Secrets
@@ -9,17 +8,16 @@ FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 def generate_content_and_image_prompt():
-    # استعمال موديل Gemini 3 Flash Preview
+    # استعمال Gemini 3 Flash Preview
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
     
-    # برومبت دقيق باش يحيد المقدمة ويقاد التصويرة
     prompt = """
     أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة 'تقنية بالدارجة'.
     الشروط:
-    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع تكتب أي مقدمة بحال 'هاك المنشور' أو 'إليك هاد المعلومة').
-    2. حافظ على نفس طول المنشور السابق (شرح معمق، خطوات واضحة، ونصائح).
-    3. في آخر المنشور، أضف سطراً يبدأ بكلمة IMAGE_PROMPT: متبوعة بوصف دقيق بالإنجليزية للصورة التي تناسب المحتوى (مثال: A high-tech digital security shield with neon lights).
+    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع تكتب أي مقدمة بحال 'هاك المنشور').
+    2. المنشور يجب أن يكون تقنياً ومفيداً (شرح، خطوات، نصائح).
+    3. في آخر المنشور، أضف سطراً يبدأ بكلمة IMAGE_PROMPT: متبوعة بوصف دقيق بالإنجليزية للصورة (مثال: cybersecurity hacker matrix style).
     """
     
     headers = {'Content-Type': 'application/json'}
@@ -30,39 +28,47 @@ def generate_content_and_image_prompt():
         res_json = response.json()
         full_text = res_json['candidates'][0]['content']['parts'][0]['text']
         
-        # تقسيم النص لاستخراج المنشور ووصف الصورة
         if "IMAGE_PROMPT:" in full_text:
             parts = full_text.split("IMAGE_PROMPT:")
             post_content = parts[0].strip()
             img_description = parts[1].strip()
         else:
             post_content = full_text
-            img_description = "cybersecurity technology concept"
+            img_description = "futuristic technology cyber security"
             
         return post_content, img_description
-    except Exception as e:
-        print(f"Error: {e}")
+    except:
         return None, None
 
 def post_to_facebook(message, img_description):
-    # توليد صورة ذكاء اصطناعي بناءً على وصف Gemini
+    # 1. إنشاء رابط الصورة
     encoded_prompt = urllib.parse.quote(img_description)
-    # استعملنا محرك توليد الصور Pollinations اللي كيعطي نتائج فنية ومرتبطة بالوصف
     image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
     
+    # 2. تحميل الصورة محلياً (باش فيسبوك يلقاها واجدة)
+    img_data = requests.get(image_url).content
+    with open('temp_image.jpg', 'wb') as handler:
+        handler.write(img_data)
+    
+    # 3. إرسال الصورة كملف (File Upload)
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
-    payload = {
-        'url': image_url,
-        'caption': message,
-        'access_token': FB_PAGE_ACCESS_TOKEN
-    }
-    return requests.post(fb_url, data=payload).json()
+    
+    with open('temp_image.jpg', 'rb') as img_file:
+        files = {
+            'source': img_file # هنا صيفطنا الملف حقيقي ماشي غير رابط
+        }
+        payload = {
+            'caption': message,
+            'access_token': FB_PAGE_ACCESS_TOKEN
+        }
+        response = requests.post(fb_url, data=payload, files=files)
+        return response.json()
 
 if __name__ == "__main__":
     content, img_prompt = generate_content_and_image_prompt()
     
     if content:
-        print(f"Content ready (No intro). Image prompt: {img_prompt}")
+        print(f"Content ready. Sending to Facebook...")
         result = post_to_facebook(content, img_prompt)
         print("Facebook Result:", result)
     else:
