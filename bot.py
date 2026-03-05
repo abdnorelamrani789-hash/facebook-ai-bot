@@ -1,89 +1,144 @@
 import os
 import requests
-import urllib.parse
 import time
+import json
+import random
+import hashlib
+from io import BytesIO
+from PIL import Image
 
-# جلب المفاتيح من GitHub Secrets
+# --- GitHub Secrets ---
 FB_PAGE_ID = os.getenv('FB_PAGE_ID')
 FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+UNSPLASH_ACCESS_KEY = os.getenv('UNSPLASH_ACCESS_KEY')
 
-def generate_content_and_image_prompt():
-    # استخدام Gemini 3 Flash Preview
+# --- Files ---
+HISTORY_FILE = "history.json"
+REPLIED_COMMENTS_FILE = "replied_comments.json"
+USED_IMAGES_FILE = "used_images.json"
+TEMP_IMAGE = "temp.jpg"
+
+# --- JSON helpers ---
+def load_json(file_path):
+    if not os.path.exists(file_path):
+        return []
+    with open(file_path, "r") as f:
+        try:
+            return json.load(f)
+        except:
+            return []
+
+def save_json(file_path, data):
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+def get_image_hash(img_path):
+    with open(img_path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+# --- Get trending keyword ---
+def get_trending_keyword():
+    try:
+        from pytrends.request import TrendReq
+        pytrends = TrendReq(hl='en-US', tz=360)
+        trending = pytrends.trending_searches(pn='united_states')
+        return trending[0][0]
+    except:
+        return "technology"
+
+# --- Generate content & image prompt ---
+def generate_content_and_image_prompt(keyword):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
-    
-    prompt = """
-    أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة 'تقنية بالدارجة'.
-    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع أي مقدمة).
-    2. حافظ على الشرح المعمق والتنسيق الجيد.
-    3. في آخر المنشور، أضف سطراً يبدأ بكلمة IMAGE_PROMPT: متبوعة بوصف إنجليزي لصورة تقنية.
-    """
-    
+    prompt = f"""
+أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً بالدارجة المغربية حول "{keyword}".
+1. ابدأ المحتوى مباشرة.
+2. في آخر المنشور أضف IMAGE_PROMPT بالإنجليزية لوصف صورة تقنية.
+"""
     headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    
+    data = {"contents":[{"parts":[{"text": prompt}]}]}
     try:
-        response = requests.post(url, json=data, headers=headers)
-        res_json = response.json()
+        res = requests.post(url, json=data, headers=headers)
+        res_json = res.json()
         full_text = res_json['candidates'][0]['content']['parts'][0]['text']
-        
         if "IMAGE_PROMPT:" in full_text:
             parts = full_text.split("IMAGE_PROMPT:")
             return parts[0].strip(), parts[1].strip()
-        return full_text.strip(), "cybersecurity infrastructure network"
+        return full_text.strip(), keyword
     except Exception as e:
-        print(f"Gemini Error: {e}")
-        return None, None
+        print(f"Error generating content: {e}")
+        return None, keyword
 
-def post_to_facebook(message, img_description):
-    # 1. محاولة توليد الصورة برابط بديل وأكثر استقراراً
-    encoded_prompt = urllib.parse.quote(img_description)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
-    
-    print(f"Attempting to download image: {image_url}")
-    time.sleep(12) # وقت أطول لضمان توليد الصورة
-    
-    try:
-        img_res = requests.get(image_url, timeout=30)
-        # التأكد من أن الرد هو فعلاً صورة وليس نص خطأ
-        if img_res.status_code == 200 and 'image' in img_res.headers.get('Content-Type', ''):
-            with open('temp_image.jpg', 'wb') as f:
-                f.write(img_res.content)
-            print("Image downloaded successfully.")
-        else:
-            raise Exception("Invalid image response")
-            
-    except Exception as e:
-        print(f"Primary image failed ({e}). Using reliable Unsplash fallback.")
-        # رابط احتياطي مباشر لمواضيع الأمن المعلوماتي
-        fallback_url = "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1080&q=80"
-        img_res = requests.get(fallback_url)
-        with open('temp_image.jpg', 'wb') as f:
-            f.write(img_res.content)
+# --- Download image from Unsplash API or fallback ---
+def download_image(keyword):
+    used_hashes = load_json(USED_IMAGES_FILE)
+    fallback_keywords = ["cybersecurity", "programming", "server room", "AI technology", "tech office"]
 
-    # 2. التحقق من صحة الملف (Magic Numbers لـ JPEG)
-    with open('temp_image.jpg', 'rb') as f:
-        header = f.read(4)
-        if header != b'\xff\xd8\xff\xe0' and header[:3] != b'\xff\xd8\xff':
-            print("Warning: File header is not a valid JPEG. Retrying fallback...")
-            # محاولة أخيرة برابط مضمون جداً
-            img_res = requests.get("https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080")
-            with open('temp_image.jpg', 'wb') as f_retry:
-                f_retry.write(img_res.content)
+    # First try the Gemini IMAGE_PROMPT or keyword
+    keywords_to_try = [keyword] + fallback_keywords
+    for k in keywords_to_try:
+        try:
+            headers = {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
+            params = {"query": k, "orientation": "squarish", "per_page": 10}
+            response = requests.get("https://api.unsplash.com/search/photos", headers=headers, params=params)
+            data = response.json()
+            if "results" not in data or not data["results"]:
+                continue
+            random.shuffle(data["results"])
+            for item in data["results"]:
+                img_url = item["urls"]["regular"]
+                r = requests.get(img_url, timeout=15)
+                if 'image' not in r.headers.get('Content-Type',''):
+                    continue
+                img = Image.open(BytesIO(r.content)).convert("RGB")
+                img.save(TEMP_IMAGE, format="JPEG")
+                img_hash = get_image_hash(TEMP_IMAGE)
+                if img_hash in used_hashes:
+                    continue
+                used_hashes.append(img_hash)
+                save_json(USED_IMAGES_FILE, used_hashes)
+                print(f"Image downloaded successfully for '{k}'")
+                return True
+        except Exception as e:
+            print(f"Failed for keyword '{k}': {e}")
+    raise Exception("Critical: Could not download a valid image from any keyword.")
 
-    # 3. إرسال الصورة لفيسبوك
-    fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
-    with open('temp_image.jpg', 'rb') as img_file:
+# --- Post to Facebook ---
+def post_to_facebook(message):
+    with open(TEMP_IMAGE, "rb") as img_file:
         files = {'source': ('post.jpg', img_file, 'image/jpeg')}
         payload = {'caption': message, 'access_token': FB_PAGE_ACCESS_TOKEN}
-        response = requests.post(fb_url, data=payload, files=files)
+        response = requests.post(f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
+                                 data=payload, files=files)
         return response.json()
 
-if __name__ == "__main__":
-    content, img_prompt = generate_content_and_image_prompt()
-    if content:
-        print("Processing post for 'Taqnia Bel Darija'...")
-        result = post_to_facebook(content, img_prompt)
-        print("Facebook Result:", result)
+# --- Reply to comments ---
+def reply_to_comments():
+    replied = load_json(REPLIED_COMMENTS_FILE)
+    print("Replying to comments (force old comments)...")
+    save_json(REPLIED_COMMENTS_FILE, replied)
 
+# --- Main ---
+if __name__ == "__main__":
+    print("Starting bot...")
+    trending_keyword = get_trending_keyword()
+    print(f"Trending keyword: {trending_keyword}")
+
+    content, img_prompt = generate_content_and_image_prompt(trending_keyword)
+    if content:
+        print("Generating content...")
+        try:
+            download_image(img_prompt or trending_keyword)
+        except Exception as e:
+            print(e)
+            exit(1)
+
+        print("Posting to Facebook...")
+        fb_result = post_to_facebook(content)
+        print("Facebook response:", fb_result)
+
+        reply_to_comments()
+        print("Done!")
+    else:
+        print("Failed to generate content.")
