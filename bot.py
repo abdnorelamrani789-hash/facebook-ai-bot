@@ -1,34 +1,24 @@
 import os
 import requests
+import urllib.parse
 import time
 
-# جلب المفاتيح مع التأكد من وجودها
+# جلب المفاتيح من GitHub Secrets
 FB_PAGE_ID = os.getenv('FB_PAGE_ID')
 FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-HF_API_KEY = os.getenv('HF_API_KEY')
 
-def check_secrets():
-    """التأكد من أن جميع المفاتيح الضرورية موجودة"""
-    missing = []
-    if not FB_PAGE_ID: missing.append("FB_PAGE_ID")
-    if not FB_PAGE_ACCESS_TOKEN: missing.append("FB_PAGE_ACCESS_TOKEN")
-    if not GEMINI_API_KEY: missing.append("GEMINI_API_KEY")
-    if not HF_API_KEY: missing.append("HF_API_KEY")
-    
-    if missing:
-        raise ValueError(f"المفاتيح التالية ناقصة في GitHub Secrets: {', '.join(missing)}")
-
-def generate_content_and_prompt():
-    # استخدام Gemini 3 Flash Preview لإنتاج محتوى احترافي
+def generate_content_and_image_prompt():
+    # فرض استخدام Gemini 3 Flash Preview
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = """
     أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة 'تقنية بالدارجة'.
-    1. ابدأ المنشور مباشرة بالمحتوى (بدون مقدمات).
-    2. حافظ على الشرح المعمق والتنسيق الجيد.
-    3. في آخر سطر، اكتب IMAGE_PROMPT: متبوعة بوصف إنجليزي لصورة سينمائية تقنية.
+    الشروط:
+    1. ابدأ المنشور مباشرة بالمحتوى (ممنوع تكتب أي مقدمة بحال 'هاك المنشور' أو 'إليك هاد المعلومة').
+    2. المنشور يجب أن يكون تقنياً ومفيداً (شرح معمق، خطوات، نصائح).
+    3. في آخر المنشور، أضف سطراً يبدأ بكلمة IMAGE_PROMPT: متبوعة بوصف دقيق بالإنجليزية للصورة (مثال: cybersecurity hacker digital world).
     """
     
     headers = {'Content-Type': 'application/json'}
@@ -39,46 +29,58 @@ def generate_content_and_prompt():
         res_json = response.json()
         full_text = res_json['candidates'][0]['content']['parts'][0]['text']
         
+        # استخراج المنشور ووصف الصورة
         if "IMAGE_PROMPT:" in full_text:
             parts = full_text.split("IMAGE_PROMPT:")
-            return parts[0].strip(), parts[1].strip()
-        return full_text.strip(), "modern cybersecurity technology concept"
-    except Exception as e:
-        print(f"Gemini Error: {e}")
+            post_content = parts[0].strip()
+            img_description = parts[1].strip()
+        else:
+            post_content = full_text
+            img_description = "futuristic technology cyber security"
+            
+        return post_content, img_description
+    except:
         return None, None
 
-def generate_image_hf(image_prompt):
-    # استخدام رابط الاستدلال لـ Hugging Face
-    API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-    # إضافة التحقق لتجنب خطأ NoneType
-    api_key = HF_API_KEY.strip() if HF_API_KEY else ""
-    headers = {"Authorization": f"Bearer {api_key}"}
+def post_to_facebook(message, img_description):
+    # 1. إنشاء رابط الصورة وتجربة تحميلها
+    encoded_prompt = urllib.parse.quote(img_description)
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
     
-    response = requests.post(API_URL, headers=headers, json={"inputs": image_prompt})
+    # محاولة تحميل الصورة (نتسناو 5 ثواني باش توجد)
+    time.sleep(5)
+    img_res = requests.get(image_url)
     
-    if response.status_code == 200:
-        return response.content
+    if img_res.status_code == 200:
+        with open('temp_image.jpg', 'wb') as f:
+            f.write(img_res.content)
     else:
-        print(f"HF Error: {response.status_code} - {response.text}")
-        return None
+        print("Image generation failed. Using a backup image.")
+        # صورة احتياطية في حالة فشل التوليد
+        img_res = requests.get("https://source.unsplash.com/1080x1080/?cybersecurity,tech")
+        with open('temp_image.jpg', 'wb') as f:
+            f.write(img_res.content)
 
-def post_to_facebook(message, image_bytes):
+    # 2. إرسال الصورة كملف لفيسبوك
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
-    files = {'source': ('image.jpg', image_bytes, 'image/jpeg')}
-    payload = {'caption': message, 'access_token': FB_PAGE_ACCESS_TOKEN}
-    return requests.post(fb_url, data=payload, files=files).json()
+    
+    with open('temp_image.jpg', 'rb') as img_file:
+        files = {
+            'source': ('temp_image.jpg', img_file, 'image/jpeg')
+        }
+        payload = {
+            'caption': message,
+            'access_token': FB_PAGE_ACCESS_TOKEN
+        }
+        response = requests.post(fb_url, data=payload, files=files)
+        return response.json()
 
 if __name__ == "__main__":
-    try:
-        check_secrets()
-        content, img_prompt = generate_content_and_prompt()
-        if content:
-            print(f"Generating image for: {img_prompt}")
-            image_data = generate_image_hf(img_prompt)
-            if image_data:
-                result = post_to_facebook(content, image_data)
-                print("Facebook Result:", result)
-            else:
-                print("Failed to generate image. Check HF Token.")
-    except Exception as e:
-        print(f"خطأ في التشغيل: {e}")
+    content, img_prompt = generate_content_and_image_prompt()
+    
+    if content:
+        print(f"Content ready for Gemini 3 Flash. Sending to Facebook...")
+        result = post_to_facebook(content, img_prompt)
+        print("Facebook Result:", result)
+    else:
+        print("Failed to generate content.")
