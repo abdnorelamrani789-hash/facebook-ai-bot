@@ -7,15 +7,15 @@ import hashlib
 from io import BytesIO
 from PIL import Image
 
-# --- إعدادات GitHub Secrets ---
+# --- GitHub Secrets ---
 FB_PAGE_ID = os.getenv('FB_PAGE_ID')
 FB_PAGE_ACCESS_TOKEN = os.getenv('FB_PAGE_ACCESS_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 UNSPLASH_ACCESS_KEY = os.getenv('UNSPLASH_ACCESS_KEY')
 
-# --- ملفات تخزين البيانات ---
+# --- Files ---
 HISTORY_FILE = "history.json"
-REPLIED_COMMENTS_FILE = "reply_comments.json"
+REPLIED_COMMENTS_FILE = "replied_comments.json"
 USED_IMAGES_FILE = "used_images.json"
 TEMP_IMAGE = "temp.jpg"
 
@@ -37,29 +37,27 @@ def get_image_hash(img_path):
     with open(img_path, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
 
-# --- جلب keyword الترند ---
+# --- Get trending keyword ---
 def get_trending_keyword():
     try:
         from pytrends.request import TrendReq
         pytrends = TrendReq(hl='en-US', tz=360)
         trending = pytrends.trending_searches(pn='united_states')
-        keyword = trending[0][0]
-        return keyword
-    except Exception as e:
-        print(f"Error fetching trending topics: {e}")
+        return trending[0][0]
+    except:
         return "technology"
 
-# --- توليد المحتوى باستخدام Gemini ---
+# --- Generate content & image prompt ---
 def generate_content_and_image_prompt(keyword):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
     prompt = f"""
-أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً احترافياً بالدارجة المغربية حول "{keyword}".
+أنت خبير في الأمن المعلوماتي والشبكات. اكتب منشوراً بالدارجة المغربية حول "{keyword}".
 1. ابدأ المحتوى مباشرة.
-2. في آخر المنشور، أضف IMAGE_PROMPT بالإنجليزية لوصف صورة تقنية.
+2. في آخر المنشور أضف IMAGE_PROMPT بالإنجليزية لوصف صورة تقنية.
 """
     headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    data = {"contents":[{"parts":[{"text": prompt}]}]}
     try:
         res = requests.post(url, json=data, headers=headers)
         res_json = res.json()
@@ -72,34 +70,41 @@ def generate_content_and_image_prompt(keyword):
         print(f"Error generating content: {e}")
         return None, keyword
 
-# --- تحميل صورة من Unsplash API (مضمونة) ---
+# --- Download image from Unsplash API or fallback ---
 def download_image(keyword):
     used_hashes = load_json(USED_IMAGES_FILE)
-    headers = {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
-    params = {"query": keyword, "orientation": "squarish", "per_page": 10}
-    response = requests.get("https://api.unsplash.com/search/photos", headers=headers, params=params)
-    data = response.json()
-    if "results" not in data or not data["results"]:
-        raise Exception("No images found for keyword.")
+    fallback_keywords = ["cybersecurity", "programming", "server room", "AI technology", "tech office"]
 
-    random.shuffle(data["results"])
-    for item in data["results"]:
-        img_url = item["urls"]["regular"]
-        r = requests.get(img_url, timeout=15)
-        if 'image' not in r.headers.get('Content-Type',''):
-            continue
-        img = Image.open(BytesIO(r.content)).convert("RGB")
-        img.save(TEMP_IMAGE, format="JPEG")
-        img_hash = get_image_hash(TEMP_IMAGE)
-        if img_hash in used_hashes:
-            continue
-        used_hashes.append(img_hash)
-        save_json(USED_IMAGES_FILE, used_hashes)
-        print(f"Image downloaded successfully from Unsplash API for '{keyword}'")
-        return True
-    raise Exception("All images were already used.")
+    # First try the Gemini IMAGE_PROMPT or keyword
+    keywords_to_try = [keyword] + fallback_keywords
+    for k in keywords_to_try:
+        try:
+            headers = {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
+            params = {"query": k, "orientation": "squarish", "per_page": 10}
+            response = requests.get("https://api.unsplash.com/search/photos", headers=headers, params=params)
+            data = response.json()
+            if "results" not in data or not data["results"]:
+                continue
+            random.shuffle(data["results"])
+            for item in data["results"]:
+                img_url = item["urls"]["regular"]
+                r = requests.get(img_url, timeout=15)
+                if 'image' not in r.headers.get('Content-Type',''):
+                    continue
+                img = Image.open(BytesIO(r.content)).convert("RGB")
+                img.save(TEMP_IMAGE, format="JPEG")
+                img_hash = get_image_hash(TEMP_IMAGE)
+                if img_hash in used_hashes:
+                    continue
+                used_hashes.append(img_hash)
+                save_json(USED_IMAGES_FILE, used_hashes)
+                print(f"Image downloaded successfully for '{k}'")
+                return True
+        except Exception as e:
+            print(f"Failed for keyword '{k}': {e}")
+    raise Exception("Critical: Could not download a valid image from any keyword.")
 
-# --- نشر على فيسبوك ---
+# --- Post to Facebook ---
 def post_to_facebook(message):
     with open(TEMP_IMAGE, "rb") as img_file:
         files = {'source': ('post.jpg', img_file, 'image/jpeg')}
@@ -108,7 +113,7 @@ def post_to_facebook(message):
                                  data=payload, files=files)
         return response.json()
 
-# --- الرد على التعليقات ---
+# --- Reply to comments ---
 def reply_to_comments():
     replied = load_json(REPLIED_COMMENTS_FILE)
     print("Replying to comments (force old comments)...")
@@ -117,18 +122,16 @@ def reply_to_comments():
 # --- Main ---
 if __name__ == "__main__":
     print("Starting bot...")
-    keyword = get_trending_keyword()
-    print(f"Trending keyword: {keyword}")
+    trending_keyword = get_trending_keyword()
+    print(f"Trending keyword: {trending_keyword}")
 
-    content, img_prompt = generate_content_and_image_prompt(keyword)
+    content, img_prompt = generate_content_and_image_prompt(trending_keyword)
     if content:
         print("Generating content...")
-
-        # تحميل الصورة مضمون
         try:
-            download_image(keyword)
+            download_image(img_prompt or trending_keyword)
         except Exception as e:
-            print(f"Critical: Could not download a valid image. Aborting post. {e}")
+            print(e)
             exit(1)
 
         print("Posting to Facebook...")
