@@ -1,10 +1,7 @@
 import os
 import requests
-import urllib.parse
-import time
-import json
-from datetime import datetime, timedelta
 import random
+import time
 
 # =========================
 # Environment Variables
@@ -17,21 +14,31 @@ if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
 
 TEMP_IMAGE = "temp_image.jpg"
-HISTORY_FILE = "posted_history.json"
-REPLIED_FILE = "replied_comments.json"
 
 # =========================
-# Load/Save history
+# Image Library (real images)
 # =========================
-def load_json(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=2)
+# ضع هنا روابط حقيقية للصور لكل موضوع
+IMAGE_LIBRARY = {
+    "cybersecurity": [
+        "https://images.pexels.com/photos/547429/pexels-photo-547429.jpeg",
+        "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg",
+        "https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg"
+    ],
+    "programming": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
+    ],
+    "AI": [
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg"
+    ],
+    "default": [
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
+    ]
+}
 
 # =========================
 # Generate Content
@@ -69,11 +76,12 @@ IMAGE_PROMPT: وصف إنجليزي لصورة تقنية احترافية مت�
             return None, None
 
         full_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+
         if "IMAGE_PROMPT:" in full_text:
             text, img_prompt = full_text.split("IMAGE_PROMPT:", 1)
             return text.strip(), img_prompt.strip()
 
-        return full_text.strip(), "cybersecurity network infrastructure digital security"
+        return full_text.strip(), "cybersecurity"
 
     except Exception as e:
         print("Gemini Error:", e)
@@ -82,22 +90,20 @@ IMAGE_PROMPT: وصف إنجليزي لصورة تقنية احترافية مت�
 # =========================
 # Download Image
 # =========================
-def download_image(prompt):
-    # هنا نستعمل Pexels مباشرة برابط ثابت كبديل مضمون
-    # مثال:
-    IMAGE_LINKS = [
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
-        "https://images.pexels.com/photos/3861969/pexels-photo-3861969.jpeg",
-        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg"
-    ]
-    selected = random.choice(IMAGE_LINKS)
-    print(f"Downloading image for topic '{prompt}': {selected}")
+def download_image(topic):
+    # اختيار الموضوع الصحيح أو default
+    topic_key = topic.lower() if topic.lower() in IMAGE_LIBRARY else "default"
+    image_url = random.choice(IMAGE_LIBRARY[topic_key])
+    print(f"Downloading image for topic '{topic}': {image_url}")
 
     try:
-        img_res = requests.get(selected, timeout=30)
-        with open(TEMP_IMAGE, "wb") as f:
-            f.write(img_res.content)
-        return True
+        img_res = requests.get(image_url, timeout=30)
+        if img_res.status_code == 200 and 'image' in img_res.headers.get('Content-Type', ''):
+            with open(TEMP_IMAGE, "wb") as f:
+                f.write(img_res.content)
+            return True
+        else:
+            raise Exception("Invalid image response")
     except Exception as e:
         print("Image download failed:", e)
         return False
@@ -109,7 +115,7 @@ def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
             header = f.read(4)
-        if header[:3] == b"\xff\xd8\xff":  # JPEG check
+        if header[:3] == b"\xff\xd8\xff":
             return True
         print("Invalid JPEG header")
         return False
@@ -132,63 +138,34 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Reply to comments
+# Main
 # =========================
-def reply_to_comments(post_id):
-    replied = load_json(REPLIED_FILE)
-    comments_url = f"https://graph.facebook.com/v19.0/{post_id}/comments?access_token={FB_PAGE_ACCESS_TOKEN}"
+def main():
+    print("Generating content...")
+    content, img_prompt = generate_content_and_image_prompt()
+
+    if not content:
+        print("Failed to generate content")
+        return
+
+    print("Content generated successfully")
+
+    if not download_image(img_prompt):
+        print("Image download failed")
+        return
+
+    if not validate_image():
+        print("Image validation failed")
+        return
+
+    print("Posting to Facebook...")
+    result = post_to_facebook(content)
+    print("Facebook response:", result)
 
     try:
-        res = requests.get(comments_url, timeout=30).json()
-        for comment in res.get("data", []):
-            c_id = comment["id"]
-            if c_id in replied:
-                continue
-            reply_msg = "شكراً على تعليقك! 🌟"
-            reply_url = f"https://graph.facebook.com/v19.0/{c_id}/comments"
-            requests.post(reply_url, data={"message": reply_msg, "access_token": FB_PAGE_ACCESS_TOKEN})
-            replied[c_id] = datetime.now().isoformat()
-        save_json(REPLIED_FILE, replied)
-    except Exception as e:
-        print("Error replying to comments:", e)
+        os.remove(TEMP_IMAGE)
+    except:
+        pass
 
-# =========================
-# Main Bot Loop
-# =========================
-def run_bot():
-    history = load_json(HISTORY_FILE)
-    posted_today = history.get(str(datetime.today().date()), [])
-
-    while len(posted_today) < 3:  # 3 منشورات يومياً
-        print(f"\nGenerating post {len(posted_today)+1} for today...")
-        content, img_prompt = generate_content_and_image_prompt()
-        if not content:
-            print("Failed to generate content")
-            break
-
-        if not download_image(img_prompt) or not validate_image():
-            print("Image download/validation failed, skipping post")
-            continue
-
-        fb_result = post_to_facebook(content)
-        print("Facebook response:", fb_result)
-
-        if fb_result and "id" in fb_result:
-            post_id = fb_result["id"]
-            reply_to_comments(post_id)
-            posted_today.append(post_id)
-
-        # انتظر 4 ساعات تقريباً بين كل منشور
-        time.sleep(4 * 60 * 60)
-
-    # حفظ التاريخ
-    history[str(datetime.today().date())] = posted_today
-    save_json(HISTORY_FILE, history)
-    print("All posts done for today!")
-
-# =========================
-# Run
-# =========================
 if __name__ == "__main__":
-    print("Starting bot...")
-    run_bot()
+    main()
