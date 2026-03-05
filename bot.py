@@ -2,7 +2,6 @@ import os
 import requests
 import random
 import json
-import time
 from io import BytesIO
 from PIL import Image
 
@@ -77,10 +76,14 @@ IMAGE_KEYWORD: كلمة انجليزية تمثل موضوع الصورة
         r = requests.post(url, json=data)
         res = r.json()
         text = res["candidates"][0]["content"]["parts"][0]["text"]
+
         if "IMAGE_KEYWORD:" in text:
-            content, keyword = text.split("IMAGE_KEYWORD:")
+            parts = text.split("IMAGE_KEYWORD:")
+            content = "".join(parts[:-1]).strip()
+            keyword = parts[-1].strip()
         else:
             content, keyword = text, topic
+
     except Exception as e:
         print(f"Error generating content: {e}")
         content, keyword = "منشور تجريبي بالدارجة المغربية", topic
@@ -88,24 +91,39 @@ IMAGE_KEYWORD: كلمة انجليزية تمثل موضوع الصورة
     used_topics.append(topic)
     save_json(HISTORY_FILE, used_topics)
 
-    return content.strip(), keyword.strip()
+    return content, keyword
 
 # -----------------------
-# تحميل الصورة وتحويلها ل JPEG
+# تحميل الصورة مع fallback و تحويل JPEG
 # -----------------------
 def download_image(keyword):
-    url = f"https://source.unsplash.com/1080x1080/?{keyword},technology"
-    try:
-        r = requests.get(url)
-        img = Image.open(BytesIO(r.content)).convert("RGB")  # يحول لأي صيغة JPEG
-        img.save(TEMP_IMAGE, format="JPEG")
-    except Exception as e:
-        print(f"Error downloading image: {e}")
+    urls = [
+        f"https://source.unsplash.com/1080x1080/?{keyword},technology",
+        "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1080"  # fallback
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=15)
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+            img.save(TEMP_IMAGE, format="JPEG")
+            print(f"Image downloaded successfully from {url}")
+            return
+        except Exception as e:
+            print(f"Failed to download image from {url}: {e}")
+    print("No image could be downloaded. The post will be text only.")
 
 # -----------------------
 # نشر المنشور على فيسبوك
 # -----------------------
 def post_to_facebook(message):
+    if not os.path.exists(TEMP_IMAGE):
+        print("No image file found, posting text only.")
+        url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/feed"
+        data = {"message": message, "access_token": FB_PAGE_ACCESS_TOKEN}
+        r = requests.post(url, data=data)
+        print("Facebook response:", r.json())
+        return
+
     url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
         with open(TEMP_IMAGE, "rb") as img:
