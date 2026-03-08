@@ -1,12 +1,12 @@
 import requests
 import json
 import os
+import feedparser
 import google.generativeai as genai
 
-NEWS_API_KEY = "NEWS_API_KEY"
-FACEBOOK_PAGE_ID = "PAGE_ID"
-FACEBOOK_ACCESS_TOKEN = "PAGE_ACCESS_TOKEN"
-GEMINI_API_KEY = "GEMINI_API_KEY"
+FACEBOOK_PAGE_ID = os.getenv("PAGE_ID")
+FACEBOOK_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -30,54 +30,61 @@ def save_posted(url):
         json.dump(posted, f)
 
 
-# جلب الأخبار
+# جلب الأخبار من RSS
 def get_news():
 
-    url = "https://newsapi.org/v2/everything"
-
-    params = {
-        "q": "AI OR Apple OR Google OR Microsoft OR Nvidia OR OpenAI OR Gaming OR Smartphone",
-        "language": "en",
-        "sortBy": "popularity",
-        "pageSize": 20,
-        "domains": "techcrunch.com,theverge.com,wired.com",
-        "apiKey": NEWS_API_KEY
-    }
-
-    r = requests.get(url, params=params)
-    data = r.json()
+    feeds = [
+        "https://www.theverge.com/rss/index.xml",
+        "https://techcrunch.com/feed/",
+        "https://www.wired.com/feed/rss",
+        "https://feeds.arstechnica.com/arstechnica/index",
+        "https://www.engadget.com/rss.xml"
+    ]
 
     posted = load_posted()
 
-    for article in data["articles"]:
+    for feed_url in feeds:
 
-        if article["url"] not in posted:
+        feed = feedparser.parse(feed_url)
 
-            return {
-                "title": article["title"],
-                "desc": article["description"],
-                "url": article["url"],
-                "image": article["urlToImage"]
-            }
+        for entry in feed.entries:
+
+            link = entry.link
+
+            if link not in posted:
+
+                title = entry.title
+                desc = entry.summary if "summary" in entry else ""
+
+                image = None
+                if "media_content" in entry:
+                    image = entry.media_content[0]["url"]
+
+                return {
+                    "title": title,
+                    "desc": desc,
+                    "url": link,
+                    "image": image
+                }
 
     return None
 
 
-# توليد منشور
+# توليد منشور احترافي
 def generate_post(article):
 
     model = genai.GenerativeModel("gemini-pro")
 
     prompt = f"""
-اكتب منشور فايسبوك تقني احترافي بالدارجة المغربية.
+اكتب منشور فايسبوك احترافي بالدارجة المغربية حول خبر تقني.
 
 القواعد:
-- بدون أي مقدمة
+- بدون مقدمة
 - لا تكرر العنوان
-- شرح الخبر بطريقة بسيطة
-- استعمل 3 ايموجي
-- اجعل المنشور بين 4 و 6 أسطر
-- أضف سؤال في النهاية لزيادة التفاعل
+- شرح بسيط وواضح
+- 4 إلى 6 أسطر
+- استعمل ايموجي
+- أضف سؤال للنقاش
 - أضف هاشتاغات تقنية
 
 العنوان:
@@ -86,32 +93,12 @@ def generate_post(article):
 الوصف:
 {article['desc']}
 
-اكتب نص المنشور فقط.
+اكتب المنشور فقط.
 """
 
     response = model.generate_content(prompt)
 
     return response.text.strip()
-
-
-# توليد صورة
-def generate_image(title):
-
-    try:
-
-        model = genai.GenerativeModel("gemini-pro-vision")
-
-        prompt = f"create a modern tech news illustration about: {title}"
-
-        result = model.generate_content(prompt)
-
-        if hasattr(result, "image"):
-            return result.image
-
-    except:
-        pass
-
-    return None
 
 
 # النشر في فايسبوك
@@ -136,19 +123,14 @@ def run():
     article = get_news()
 
     if not article:
-        print("No new news found")
+        print("No new news")
         return
 
     print("Generating post...")
 
     post_text = generate_post(article)
 
-    image = generate_image(article["title"])
-
-    if image:
-        image_url = image
-    else:
-        image_url = article["image"]
+    image_url = article["image"]
 
     print("Posting to Facebook...")
 
