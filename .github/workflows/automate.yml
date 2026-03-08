@@ -9,11 +9,12 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+
     steps:
       - name: استنساخ المستودع باستخدام PAT token
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT_TOKEN }}  # استخدام التوكن الشخصي بدلاً من GITHUB_TOKEN
+          token: ${{ secrets.PAT_TOKEN }}  # استخدم التوكن الشخصي (ضروري للكتابة)
 
       - name: إعداد Python
         uses: actions/setup-python@v5
@@ -32,13 +33,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
 
-      # خطوة اختيارية لعرض محتوى ملفات الحالة بعد التشغيل (للتأكد من التغييرات)
+      # (اختياري) عرض محتوى ملفات الحالة بعد التشغيل للتحقق
       - name: عرض ملفات الحالة
         run: |
           echo "📄 posted_news.json:"
           cat posted_news.json || echo "الملف غير موجود"
           echo "📄 sources_state.json:"
           cat sources_state.json || echo "الملف غير موجود"
+          echo "📄 used_images.json:"
+          cat used_images.json || echo "الملف غير موجود"
 
       - name: رفع التغييرات إلى المستودع
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -47,5 +50,5 @@ jobs:
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-          file_pattern: "posted_news.json sources_state.json"
+          file_pattern: "posted_news.json sources_state.json used_images.json"
           skip_dirty_check: false
