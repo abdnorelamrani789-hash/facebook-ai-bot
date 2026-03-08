@@ -1,6 +1,5 @@
 import os
 import requests
-import random
 import json
 
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
@@ -12,7 +11,7 @@ TEMP_IMAGE = "ai_news.jpg"
 POSTED_FILE = "posted_news.json"
 
 # =========================
-# Load previously posted news
+# Load/Save posted news
 # =========================
 def load_posted_news():
     if os.path.exists(POSTED_FILE):
@@ -66,28 +65,25 @@ def download_image(url):
         return False
 
 # =========================
-# Gemini summarize & translate
+# Gemini summarize & translate (professional prompt)
 # =========================
 def summarize_news(article):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
-أنت صانع محتوى تقني.
+أنت صانع محتوى تقني محترف. المطلوب كتابة منشور فايسبوك احترافي بالدارجة المغربية حول الخبر التالي:
 
-المطلوب:
-1. اكتب Hook قوي يجذب الانتباه
-2. لخص الخبر بالدارجة المغربية
-3. اجعل النص مناسب لفايسبوك
-4. أضف 2-3 ايموجي تقنية
-5. في النهاية ضع سؤال للتفاعل
-6. أضف Hashtags مقترحة
+القواعد:
+1. ابدأ النص مباشرة بـ Hook جذاب، بدون أي مقدمة شخصية.
+2. اجعل المنشور طويل نسبياً، مع شرح الخبر بشكل واضح ومفصل.
+3. أضف 3-4 إيموجي تقنية مناسبة.
+4. أضف سؤال في النهاية لتحفيز التفاعل.
+5. أضف Hashtags مناسبة في آخر المنشور.
+6. لا تقصّر الجمل أو تلخّص النص، خليه طبيعي وطويل.
 
-العنوان:
-{article['title']}
-
-الوصف:
-{article['description']}
+العنوان: {article['title']}
+الوصف: {article['description']}
 """
 
     headers = {"Content-Type": "application/json"}
@@ -97,13 +93,22 @@ def summarize_news(article):
         r = requests.post(url, headers=headers, json=data, timeout=30)
         res = r.json()
         text = res["candidates"][0]["content"]["parts"][0]["text"]
-        return text
+
+        # إزالة أي مقدمة غير مرغوب فيها
+        unwanted_phrases = [
+            "بصفتي صانع محتوى تقني، إليك المنشور المقترح لمنصة فايسبوك:"
+        ]
+        for phrase in unwanted_phrases:
+            if text.startswith(phrase):
+                text = text[len(phrase):].strip()
+
+        return text.strip()
     except Exception as e:
         print("Gemini summarize error:", e)
         return article['title']
 
 # =========================
-# Generate AI image
+# Generate AI image (if needed)
 # =========================
 def generate_ai_image(prompt):
     try:
