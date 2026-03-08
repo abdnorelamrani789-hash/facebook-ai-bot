@@ -1,8 +1,8 @@
 import os
 import requests
 import random
-import time
 import json
+import feedparser
 
 # =========================
 # Environment Variables
@@ -10,7 +10,6 @@ import json
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")  # مفتوح بدون حدود يمكن تستعمل rss feeds
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
@@ -24,6 +23,9 @@ POSTED_FILE = "posted_news.json"
 if os.path.exists(POSTED_FILE):
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
         posted_news = json.load(f)
+        # force dict if file contains a list
+        if isinstance(posted_news, list):
+            posted_news = {}
 else:
     posted_news = {}
 
@@ -106,17 +108,18 @@ def post_to_facebook(message):
 # =========================
 # Fetch News (RSS example)
 # =========================
-import feedparser
 NEWS_RSS = "https://www.theverge.com/rss/index.xml"  # يمكن تغييره لأي مصدر مفتوح
 
 def get_news():
     feed = feedparser.parse(NEWS_RSS)
     for entry in feed.entries:
         if entry.link not in posted_news:
+            # حاول الحصول على صورة إذا كانت موجودة
+            image_url = entry.get("media_content", [{}])[0].get("url", "")
             return {
                 "title": entry.title,
                 "link": entry.link,
-                "image": entry.get("media_content", [{}])[0].get("url", "")
+                "image": image_url
             }
     return None
 
@@ -144,7 +147,7 @@ def main():
         print("Failed to generate post text")
         return
 
-    # تنزيل صورة placeholder إذا Gemini عطاش صورة خاصة
+    # تنزيل صورة placeholder إذا Gemini عطاش صورة خاصة أو صورة الخبر فشلت
     if not image_downloaded:
         print("Using placeholder image...")
         download_image("https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg")
@@ -154,7 +157,7 @@ def main():
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # تسجيل الخبر كمنشور
+    # تسجيل الخبر كمنشور لتجنب التكرار
     posted_news[article["link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
