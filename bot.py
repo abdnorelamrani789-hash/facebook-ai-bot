@@ -1,131 +1,169 @@
 import os
-import json
 import requests
-import feedparser
-from google import genai
+import random
+import time
+import json
 
 # =========================
-# إعداد مفاتيح البيئة
+# Environment Variables
 # =========================
-FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
-FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
+FB_PAGE_ID = os.getenv("FB_PAGE_ID")
+FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")  # مفتوح بدون حدود يمكن تستعمل rss feeds
 
-if not FACEBOOK_PAGE_ID or not FACEBOOK_ACCESS_TOKEN or not GEMINI_API_KEY:
+if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 
 # =========================
-# تحميل الأخبار المنشورة
+# Load posted news
 # =========================
-def load_posted():
-    if os.path.exists(POSTED_FILE):
-        with open(POSTED_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-def save_posted(url):
-    posted = load_posted()
-    posted.append(url)
-    with open(POSTED_FILE, "w") as f:
-        json.dump(posted, f)
+if os.path.exists(POSTED_FILE):
+    with open(POSTED_FILE, "r", encoding="utf-8") as f:
+        posted_news = json.load(f)
+else:
+    posted_news = {}
 
 # =========================
-# جلب الأخبار من RSS
+# Download Image
 # =========================
+def download_image(url):
+    try:
+        res = requests.get(url, timeout=30)
+        if res.status_code == 200 and "image" in res.headers.get("Content-Type", ""):
+            with open(TEMP_IMAGE, "wb") as f:
+                f.write(res.content)
+            return True
+        else:
+            raise Exception("Invalid image response")
+    except Exception as e:
+        print("Image download failed:", e)
+        return False
+
+# =========================
+# Validate Image
+# =========================
+def validate_image():
+    try:
+        with open(TEMP_IMAGE, "rb") as f:
+            header = f.read(4)
+        if header[:3] == b"\xff\xd8\xff":
+            return True
+        print("Invalid JPEG header")
+        return False
+    except:
+        return False
+
+# =========================
+# Gemini Content Generation
+# =========================
+def generate_post(article_title, article_url, article_image):
+    model = "models/gemini-3-flash-preview"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
+
+    prompt = f"""
+أنت خبير في التقنية. عندك خبر: "{article_title}".
+
+اكتب منشور احترافي وطويل بالدارجة المغربية لصفحة "تقنية بالدارجة"، بدون مقدمة زايدة.
+اشرح الخبر بطريقة مفهومة وبسيطة، استعمل إيموجي تقنية.
+في النهاية، ضيف سؤال لتحفيز التفاعل.
+"""
+
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        res = requests.post(url, json=data, headers=headers, timeout=30)
+        res_json = res.json()
+        if "candidates" not in res_json:
+            print("Gemini API error:", res_json)
+            return None
+
+        text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return text
+    except Exception as e:
+        print("Gemini Error:", e)
+        return None
+
+# =========================
+# Post to Facebook
+# =========================
+def post_to_facebook(message):
+    fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
+    try:
+        with open(TEMP_IMAGE, "rb") as img_file:
+            files = {"source": ("post.jpg", img_file, "image/jpeg")}
+            payload = {"caption": message, "access_token": FB_PAGE_ACCESS_TOKEN}
+            res = requests.post(fb_url, data=payload, files=files, timeout=30)
+        return res.json()
+    except Exception as e:
+        print("Facebook API Error:", e)
+        return None
+
+# =========================
+# Fetch News (RSS example)
+# =========================
+import feedparser
+NEWS_RSS = "https://www.theverge.com/rss/index.xml"  # يمكن تغييره لأي مصدر مفتوح
+
 def get_news():
-    feeds = [
-        "https://www.theverge.com/rss/index.xml",
-        "https://techcrunch.com/feed/",
-        "https://www.wired.com/feed/rss",
-        "https://feeds.arstechnica.com/arstechnica/index",
-        "https://www.engadget.com/rss.xml"
-    ]
-
-    posted = load_posted()
-
-    for feed_url in feeds:
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries:
-            link = entry.link
-            if link not in posted:
-                title = entry.title
-                desc = entry.summary if "summary" in entry else ""
-                image = None
-                if "media_content" in entry:
-                    image = entry.media_content[0]["url"]
-                elif "media_thumbnail" in entry:
-                    image = entry.media_thumbnail[0]["url"]
-                return {
-                    "title": title,
-                    "desc": desc,
-                    "url": link,
-                    "image": image
-                }
+    feed = feedparser.parse(NEWS_RSS)
+    for entry in feed.entries:
+        if entry.link not in posted_news:
+            return {
+                "title": entry.title,
+                "link": entry.link,
+                "image": entry.get("media_content", [{}])[0].get("url", "")
+            }
     return None
 
 # =========================
-# توليد منشور احترافي بالدارجة
+# Main
 # =========================
-def generate_post(article):
-    prompt = f"""
-أنت خبير في صياغة محتوى فايسبوك تقني.  
-
-اكتب منشور احترافي **بالدارجة المغربية** حول خبر تقني، بدون أي مقدمة خارجية، وبدون تكرار العنوان.  
-
-القواعد:
-- طول المنشور بين 4 و6 أسطر
-- استخدم 3 إيموجي تقنية
-- أضف سؤال في النهاية لتحفيز التفاعل
-- أضف هاشتاغات تقنية مناسبة
-
-العنوان: {article['title']}
-الوصف: {article['desc']}
-"""
-
-    response = client.chat.completions.create(
-        model="gemini-1.5",
-        messages=[{"role": "user", "content": prompt}],
-        max_output_tokens=500
-    )
-
-    return response.choices[0].message.content.strip()
-
-# =========================
-# نشر في فايسبوك
-# =========================
-def post_to_facebook(message, image_url):
-    url = f"https://graph.facebook.com/{FACEBOOK_PAGE_ID}/photos"
-    payload = {
-        "url": image_url,
-        "caption": message,
-        "access_token": FACEBOOK_ACCESS_TOKEN
-    }
-    r = requests.post(url, data=payload)
-    print("Facebook response:", r.json())
-
-# =========================
-# تشغيل البوت
-# =========================
-def run():
+def main():
     article = get_news()
     if not article:
-        print("No new news found")
+        print("No new articles to post.")
         return
 
-    print("Generating post...")
-    post_text = generate_post(article)
+    print(f"Generating post for: {article['title']}")
 
-    # استخدام صورة الخبر الأصلية أو placeholder
-    image_url = article["image"] or "https://via.placeholder.com/1200x630.png?text=Tech+News"
+    # تنزيل صورة الخبر الأصلية أولاً
+    image_downloaded = False
+    if article.get("image"):
+        image_downloaded = download_image(article["image"])
+        if image_downloaded and not validate_image():
+            image_downloaded = False
 
+    # توليد النص
+    post_text = generate_post(article["title"], article["link"], article.get("image"))
+    if not post_text:
+        print("Failed to generate post text")
+        return
+
+    # تنزيل صورة placeholder إذا Gemini عطاش صورة خاصة
+    if not image_downloaded:
+        print("Using placeholder image...")
+        download_image("https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg")
+
+    # نشر على فيسبوك
     print("Posting to Facebook...")
-    post_to_facebook(post_text, image_url)
+    res = post_to_facebook(post_text)
+    print("Facebook response:", res)
 
-    save_posted(article["url"])
-    print("Done! News posted and saved.")
+    # تسجيل الخبر كمنشور
+    posted_news[article["link"]] = True
+    with open(POSTED_FILE, "w", encoding="utf-8") as f:
+        json.dump(posted_news, f, ensure_ascii=False, indent=2)
+
+    # حذف الصورة المؤقتة
+    try:
+        os.remove(TEMP_IMAGE)
+    except:
+        pass
 
 if __name__ == "__main__":
-    run()
+    main()
