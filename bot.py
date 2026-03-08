@@ -7,13 +7,14 @@ from google import genai
 # =========================
 # إعداد مفاتيح البيئة
 # =========================
-FACEBOOK_PAGE_ID = os.getenv("PAGE_ID")
-FACEBOOK_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
+FACEBOOK_PAGE_ID = os.getenv("FB_PAGE_ID")
+FACEBOOK_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# إنشاء العميل
-client = genai.Client(api_key=GEMINI_API_KEY)
+if not FACEBOOK_PAGE_ID or not FACEBOOK_ACCESS_TOKEN or not GEMINI_API_KEY:
+    raise Exception("Missing required environment variables")
 
+client = genai.Client(api_key=GEMINI_API_KEY)
 POSTED_FILE = "posted_news.json"
 
 # =========================
@@ -83,13 +84,14 @@ def generate_post(article):
 العنوان: {article['title']}
 الوصف: {article['desc']}
 """
-    response = client.text.generate(
+
+    response = client.chat.completions.create(
         model="gemini-1.5",
-        prompt=prompt,
+        messages=[{"role": "user", "content": prompt}],
         max_output_tokens=500
     )
 
-    return response.output_text.strip()
+    return response.choices[0].message.content.strip()
 
 # =========================
 # نشر في فايسبوك
@@ -116,10 +118,8 @@ def run():
     print("Generating post...")
     post_text = generate_post(article)
 
-    # استخدام صورة الخبر الأصلية
-    image_url = article["image"]
-    if not image_url:
-        image_url = "https://via.placeholder.com/1200x630.png?text=Tech+News"  # fallback
+    # استخدام صورة الخبر الأصلية أو placeholder
+    image_url = article["image"] or "https://via.placeholder.com/1200x630.png?text=Tech+News"
 
     print("Posting to Facebook...")
     post_to_facebook(post_text, image_url)
