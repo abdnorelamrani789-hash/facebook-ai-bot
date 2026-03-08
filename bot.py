@@ -3,7 +3,7 @@ import requests
 import random
 import json
 import feedparser
-import re  # لاستخراج الصورة من الـ RSS
+import re
 
 # =========================
 # Environment Variables
@@ -19,80 +19,130 @@ TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 
 # =========================
-# Load posted news (محصن ضد أي نوع بيانات قديم)
+# Load posted news (محصن)
 # =========================
 if os.path.exists(POSTED_FILE):
     try:
         with open(POSTED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            
         if isinstance(data, list):
             posted_news = {link: True for link in data if isinstance(link, str)}
             print("✅ تم تحويل الملف القديم من list إلى dict")
         else:
             posted_news = data
-    except (json.JSONDecodeError, TypeError):
-        print("⚠️ ملف posted_news.json تالف، نبدأ من الصفر")
+    except:
         posted_news = {}
 else:
     posted_news = {}
 
 # =========================
-# Backup Images Library
+# مصادر الأخبار (7 مصادر قوية)
+# =========================
+NEWS_SOURCES = [
+    {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+    {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
+    {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
+    {"name": "Ars Technica", "url": "https://arstechnica.com/feed/"},
+    {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
+    {"name": "Android Authority", "url": "https://www.androidauthority.com/feed/"},
+    {"name": "CNET", "url": "https://www.cnet.com/rss/"},
+]
+
+# =========================
+# مكتبة الصور الاحتياطية (كثيرة جدًا - 12 لكل فئة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
         "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
         "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg",
-        "https://images.pexels.com/photos/1591060/pexels-photo-1591060.jpeg"
+        "https://images.pexels.com/photos/1591060/pexels-photo-1591060.jpeg",
+        "https://images.pexels.com/photos/210745/pexels-photo-210745.jpeg",
+        "https://images.pexels.com/photos/275033/pexels-photo-275033.jpeg",
+        "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg",
+        "https://images.pexels.com/photos/3943746/pexels-photo-3943746.jpeg",
+        "https://images.pexels.com/photos/821738/pexels-photo-821738.jpeg",
+        "https://images.pexels.com/photos/577585/pexels-photo-577585.jpeg",
+        "https://images.pexels.com/photos/1591061/pexels-photo-1591061.jpeg",
+        "https://images.pexels.com/photos/3165336/pexels-photo-3165336.jpeg",
+        "https://images.pexels.com/photos/3943747/pexels-photo-3943747.jpeg"
     ],
     "AI": [
         "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
         "https://images.pexels.com/photos/256381/pexels-photo-256381.jpeg",
-        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg"
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
+        "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
+        "https://images.pexels.com/photos/5380797/pexels-photo-5380797.jpeg",
+        "https://images.pexels.com/photos/2058120/pexels-photo-2058120.jpeg",
+        "https://images.pexels.com/photos/8386438/pexels-photo-8386438.jpeg",
+        "https://images.pexels.com/photos/3861973/pexels-photo-3861973.jpeg",
+        "https://images.pexels.com/photos/256380/pexels-photo-256380.jpeg",
+        "https://images.pexels.com/photos/1181243/pexels-photo-1181243.jpeg",
+        "https://images.pexels.com/photos/5380798/pexels-photo-5380798.jpeg"
     ],
     "tech": [
         "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
         "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
-        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg"
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/459653/pexels-photo-459653.jpeg",
+        "https://images.pexels.com/photos/2588753/pexels-photo-2588753.jpeg",
+        "https://images.pexels.com/photos/3861971/pexels-photo-3861971.jpeg",
+        "https://images.pexels.com/photos/2058121/pexels-photo-2058121.jpeg",
+        "https://images.pexels.com/photos/1181245/pexels-photo-1181245.jpeg",
+        "https://images.pexels.com/photos/3165337/pexels-photo-3165337.jpeg",
+        "https://images.pexels.com/photos/459654/pexels-photo-459654.jpeg",
+        "https://images.pexels.com/photos/2588754/pexels-photo-2588754.jpeg"
     ],
     "default": [
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg"
     ]
 }
 
 # =========================
-# Fetch news from RSS + استخراج الصورة الصحيح
+# تحديد الموضوع تلقائيًا
 # =========================
-NEWS_RSS = "https://www.theverge.com/rss/index.xml"
-
 def get_topic(title: str) -> str:
     lower = title.lower()
-    if any(k in lower for k in ["game", "playstation", "nintendo", "xbox", "gaming", "sony"]):
+    if any(k in lower for k in ["game", "playstation", "nintendo", "xbox", "sony", "gaming", "esports"]):
         return "gaming"
-    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "llm"]):
+    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "llm", "neural"]):
         return "AI"
-    elif any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "phone", "android", "tech"]):
+    elif any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "android", "pixel", "tech"]):
         return "tech"
     return "default"
 
+# =========================
+# جلب خبر جديد من أي مصدر
+# =========================
 def get_news():
-    feed = feedparser.parse(NEWS_RSS)
-    for entry in feed.entries:
-        link = entry.link
-        if link in posted_news:
-            continue
+    for source in NEWS_SOURCES:
+        print(f"🔍 جاري البحث في: {source['name']}")
+        feed = feedparser.parse(source["url"])
+        for entry in feed.entries:
+            link = entry.link
+            if link in posted_news:
+                continue
+                
+            # استخراج الصورة من الخبر
+            content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
+            image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
+            image = image_match.group(1) if image_match else ""
             
-        # استخراج الصورة من الـ content أو summary (طريقة The Verge الصحيحة)
-        content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
-        image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
-        image = image_match.group(1) if image_match else ""
-        
-        return {"title": entry.title, "link": link, "image": image}
+            print(f"✅ تم العثور على خبر جديد من {source['name']}")
+            return {
+                "title": entry.title,
+                "link": link,
+                "image": image,
+                "source": source["name"]
+            }
     return None
 
 # =========================
-# Download & Validate Image
+# باقي الدوال (نفسها بدون تغيير كبير)
 # =========================
 def download_image(url):
     try:
@@ -109,13 +159,10 @@ def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
             header = f.read(4)
-        return header[:3] == b"\xff\xd8\xff"  # JPEG check
+        return header[:3] == b"\xff\xd8\xff"
     except:
         return False
 
-# =========================
-# Generate Post using Gemini
-# =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
     prompt = f"""
@@ -133,15 +180,11 @@ def generate_post(title):
         if "candidates" not in res_json:
             print("Gemini API error:", res_json)
             return None
-        text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        return text
+        return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print("Gemini Error:", e)
         return None
 
-# =========================
-# Post to Facebook
-# =========================
 def post_to_facebook(message):
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
@@ -160,46 +203,44 @@ def post_to_facebook(message):
 def main():
     article = get_news()
     if not article:
-        print("No new articles to post.")
+        print("No new articles to post from any source.")
         return
 
-    print(f"Generating post for: {article['title']}")
+    print(f"📝 Generating post for: {article['title']} (من {article.get('source', 'غير معروف')})")
 
-    # تنزيل الصورة الأصلية إذا موجودة وصالحة
+    # تنزيل الصورة الأصلية
     image_ok = False
     if article.get("image"):
         image_ok = download_image(article["image"])
         if image_ok and not validate_image():
             image_ok = False
 
-    # إذا ما نجحتش → صورة احتياطية حسب الموضوع
+    # صورة احتياطية (من المكتبة الكبيرة)
     if not image_ok:
         topic = get_topic(article["title"])
         backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-        print(f"Using backup image for topic '{topic}': {backup_image}")
+        print(f"🖼️ Using backup image for topic '{topic}': {backup_image[:80]}...")
         image_ok = download_image(backup_image)
         if not image_ok:
             print("No image to post, aborting...")
             return
 
-    # توليد المنشور بالدارجة
+    # توليد ونشر
     post_text = generate_post(article["title"])
     if not post_text:
         print("Failed to generate post text")
         return
 
-    # نشر على فيسبوك
-    print("Posting to Facebook...")
+    print("🚀 Posting to Facebook...")
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # حفظ الخبر
+    # حفظ
     posted_news[article["link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
-    print(f"✅ تم حفظ الخبر بنجاح")
+    print(f"✅ تم حفظ الخبر بنجاح من {article.get('source')}")
 
-    # تنظيف الصورة المؤقتة
     try:
         os.remove(TEMP_IMAGE)
     except:
