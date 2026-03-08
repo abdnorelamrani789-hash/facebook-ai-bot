@@ -42,37 +42,23 @@ def get_trending_news():
 
     posted = load_posted_news()
     for article in data["articles"]:
-        if article["url"] not in posted and article.get("urlToImage"):
+        if article["url"] not in posted:
             return {
                 "title": article["title"],
                 "description": article["description"] or "",
-                "url": article["url"],
-                "image": article["urlToImage"]
+                "url": article["url"]
             }
     return None
 
 # =========================
-# Download image
+# Gemini generate content + image
 # =========================
-def download_image(url):
-    try:
-        img = requests.get(url, timeout=20)
-        with open(TEMP_IMAGE, "wb") as f:
-            f.write(img.content)
-        return True
-    except Exception as e:
-        print("Image download failed:", e)
-        return False
-
-# =========================
-# Gemini summarize & translate (professional prompt)
-# =========================
-def summarize_news(article):
+def generate_content_and_image(article):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
-أنت صانع محتوى تقني محترف. المطلوب كتابة منشور فايسبوك احترافي بالدارجة المغربية حول الخبر التالي:
+أنت صانع محتوى تقني محترف. المطلوب كتابة منشور فايسبوك احترافي بالدارجة المغربية حول الخبر التالي، مع توليد صورة AI فريدة:
 
 القواعد:
 1. ابدأ النص مباشرة بـ Hook جذاب، بدون أي مقدمة شخصية.
@@ -80,10 +66,14 @@ def summarize_news(article):
 3. أضف 3-4 إيموجي تقنية مناسبة.
 4. أضف سؤال في النهاية لتحفيز التفاعل.
 5. أضف Hashtags مناسبة في آخر المنشور.
-6. لا تقصّر الجمل أو تلخّص النص، خليه طبيعي وطويل.
+6. اجعل النص + توليد الصورة احترافية.
 
 العنوان: {article['title']}
 الوصف: {article['description']}
+
+رجاءً أعطني:
+- النص النهائي للبوست
+- IMAGE_PROMPT: وصف باللغة الإنجليزية لصورة AI احترافية متعلقة بالخبر
 """
 
     headers = {"Content-Type": "application/json"}
@@ -92,23 +82,19 @@ def summarize_news(article):
     try:
         r = requests.post(url, headers=headers, json=data, timeout=30)
         res = r.json()
-        text = res["candidates"][0]["content"]["parts"][0]["text"]
+        full_text = res["candidates"][0]["content"]["parts"][0]["text"]
 
-        # إزالة أي مقدمة غير مرغوب فيها
-        unwanted_phrases = [
-            "بصفتي صانع محتوى تقني، إليك المنشور المقترح لمنصة فايسبوك:"
-        ]
-        for phrase in unwanted_phrases:
-            if text.startswith(phrase):
-                text = text[len(phrase):].strip()
-
-        return text.strip()
+        # فصل النص عن IMAGE_PROMPT
+        if "IMAGE_PROMPT:" in full_text:
+            text, img_prompt = full_text.split("IMAGE_PROMPT:", 1)
+            return text.strip(), img_prompt.strip()
+        return full_text.strip(), article['title']  # fallback
     except Exception as e:
-        print("Gemini summarize error:", e)
-        return article['title']
+        print("Gemini API error:", e)
+        return article['title'], article['title']
 
 # =========================
-# Generate AI image (if needed)
+# Generate AI image from Gemini prompt
 # =========================
 def generate_ai_image(prompt):
     try:
@@ -149,17 +135,19 @@ def main():
         print("No new article found")
         return
 
-    print("Posting news:", article["title"])
+    print("Generating content for:", article["title"])
+    content, img_prompt = generate_content_and_image(article)
 
-    if not download_image(article["image"]):
-        print("Downloading original image failed, generating AI image...")
-        generate_ai_image(article["title"])
+    print("Generating AI image...")
+    if not generate_ai_image(img_prompt):
+        print("Failed to generate AI image, fallback to placeholder")
+        # ممكن نضع صورة افتراضية هنا
 
-    summary = summarize_news(article)
-    result = post_to_facebook(summary)
+    print("Posting to Facebook...")
+    result = post_to_facebook(content)
     print("Facebook response:", result)
 
-    # Save posted news
+    # حفظ الخبر لتجنب التكرار
     posted = load_posted_news()
     posted.append(article["url"])
     save_posted_news(posted)
