@@ -72,6 +72,23 @@ def post_to_facebook(text):
         return None
 
 # =========================
+# Generate post text in Darija
+# =========================
+def generate_post_text(article):
+    # هنا نولدو النص مباشرة بالدارجة المغربية
+    # Hook + شرح + إيموجيات + سؤال + hashtags
+    text = f"""
+💥 {article['title']}
+
+واخا كان البعض متوقع، دابا الأمور واضحة: {article['description']}
+
+🎮💻🤔 واش هاد الخبر غادي يعجبكم ولا غادي يخلّيكم تشوفوا بدائل؟
+
+#TechNews #التقنية #أخبار_التكنولوجيا #MoroccoTech
+"""
+    return text.strip()
+
+# =========================
 # Main
 # =========================
 def main():
@@ -80,9 +97,9 @@ def main():
         print("No new article found")
         return
 
-    content = f"💥 {article['title']}\n\n{article['description']}\n\n🤔 واش فكرتم بهاد الخبر؟ #TechNews #التقنية"
+    content = generate_post_text(article)
 
-    # حاول تنزيل الصورة الأصلية، fallback للـ placeholder
+    # تنزيل الصورة الأصلية، fallback للـ placeholder إذا ما كانتش موجودة
     if not article.get("image") or not download_image(article["image"]):
         print("Using placeholder image...")
         download_image(PLACEHOLDER_IMAGE_URL)
