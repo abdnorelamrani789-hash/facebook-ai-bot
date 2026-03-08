@@ -10,7 +10,6 @@ NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
 TEMP_IMAGE = "ai_news.jpg"
 POSTED_FILE = "posted_news.json"
-
 PLACEHOLDER_IMAGE_URL = "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
 
 # =========================
@@ -61,22 +60,23 @@ def generate_content_and_image(article):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
+    # برومت واضح، مباشر، بدون مقدمة زائدة، مع Hook + سؤال + hashtags
     prompt = f"""
-أنت صانع محتوى تقني محترف. المطلوب كتابة منشور فايسبوك احترافي بالدارجة المغربية حول الخبر التالي، مع توليد صورة AI فريدة:
+أنت صانع محتوى تقني محترف. المطلوب كتابة منشور فايسبوك احترافي بالدارجة المغربية حول الخبر التالي:
 
 القواعد:
-1. ابدأ النص مباشرة بـ Hook جذاب، بدون أي مقدمة شخصية.
-2. اجعل المنشور طويل نسبياً، مع شرح الخبر بشكل واضح ومفصل.
+1. ابدأ النص مباشرة بـ Hook جذاب بدون أي مقدمة خارجية.
+2. اجعل المنشور طويل نسبياً، مع شرح الخبر بوضوح ومفصل.
 3. أضف 3-4 إيموجي تقنية مناسبة.
 4. أضف سؤال في النهاية لتحفيز التفاعل.
 5. أضف Hashtags مناسبة في آخر المنشور.
-6. أعطيني وصف IMAGE_PROMPT باللغة الإنجليزية لتوليد صورة AI.
+6. أعطيني وصف IMAGE_PROMPT باللغة الإنجليزية لتوليد صورة AI مميزة لكل خبر.
 
 العنوان: {article['title']}
 الوصف: {article['description']}
 
 رجاءً أعطني:
-- النص النهائي للبوست
+- النص النهائي للبوست مباشرة
 - IMAGE_PROMPT: وصف باللغة الإنجليزية لصورة AI احترافية متعلقة بالخبر
 """
 
@@ -92,7 +92,7 @@ def generate_content_and_image(article):
         if "IMAGE_PROMPT:" in full_text:
             text, img_prompt = full_text.split("IMAGE_PROMPT:", 1)
             return text.strip(), img_prompt.strip()
-        return full_text.strip(), article['title']  # fallback
+        return full_text.strip(), article['title']
     except Exception as e:
         print("Gemini API error:", e)
         return article['title'], article['title']
@@ -170,7 +170,7 @@ def main():
     result = post_to_facebook(content)
     print("Facebook response:", result)
 
-    # Save posted news
+    # Save posted news to avoid duplicates
     posted = load_posted_news()
     posted.append(article["url"])
     save_posted_news(posted)
