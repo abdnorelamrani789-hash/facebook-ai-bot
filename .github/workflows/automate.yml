@@ -2,11 +2,11 @@ name: تقنية بالدارجة - تشغيل البوت
 
 on:
   schedule:
-    - cron: '0 * * * *'     # كل ساعة (يمكن تغييره لكل 30 دقيقة: '*/30 * * * *')
-  workflow_dispatch:        # زر "Run workflow" يدوي من GitHub
+    - cron: '0 */3 * * *'     # كل 3 ساعات (00:00 - 03:00 - 06:00 - ... UTC)
+  workflow_dispatch:          # زر "Run workflow" يدوي من GitHub
 
 permissions:
-  contents: write          # مهم عشان يقدر يحفظ posted_news.json
+  contents: write
 
 jobs:
   run-bot:
@@ -50,5 +50,5 @@ jobs:
           else
             git commit -m "Update posted_news.json - $(date '+%Y-%m-%d %H:%M')"
             git push
-            echo "✅ تم حفظ الخبراء الجدد بنجاح"
+            echo "✅ تم حفظ الخبر الجديد بنجاح"
           fi
