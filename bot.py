@@ -4,7 +4,15 @@ import random
 import json
 import feedparser
 import re
+import logging
+from datetime import date
 from urllib.parse import urlparse, urlunparse
+
+# =========================
+# إعداد التسجيل (logging)
+# =========================
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # =========================
 # Environment Variables
@@ -19,6 +27,7 @@ if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
 
 TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
+SOURCES_STATE_FILE = "sources_state.json"
 
 # =========================
 # تطبيع الروابط + تحميل posted_news
@@ -30,18 +39,60 @@ def normalize_link(url: str) -> str:
     clean = urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', '')).rstrip('/')
     return clean
 
-if os.path.exists(POSTED_FILE):
+def load_posted_news():
+    if os.path.exists(POSTED_FILE):
+        try:
+            with open(POSTED_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return {normalize_link(link): True for link in data if isinstance(link, str)}
+            elif isinstance(data, dict):
+                return {normalize_link(k): v for k, v in data.items()}
+        except Exception as e:
+            logger.error(f"Error loading posted news: {e}")
+    return {}
+
+def save_posted_news(posted):
     try:
-        with open(POSTED_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            posted_news = {normalize_link(link): True for link in data if isinstance(link, str)}
-        else:
-            posted_news = {normalize_link(k): v for k, v in data.items()}
-    except:
-        posted_news = {}
-else:
-    posted_news = {}
+        with open(POSTED_FILE, "w", encoding="utf-8") as f:
+            json.dump(posted, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving posted news: {e}")
+
+# =========================
+# إدارة حالة المصادر (آخر استخدام)
+# =========================
+def load_sources_state():
+    if os.path.exists(SOURCES_STATE_FILE):
+        try:
+            with open(SOURCES_STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading sources state: {e}")
+    return {}
+
+def save_sources_state(state):
+    try:
+        with open(SOURCES_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving sources state: {e}")
+
+def get_available_sources(sources, state):
+    """إرجاع قائمة المصادر التي لم تستخدم اليوم"""
+    today = date.today().isoformat()
+    available = []
+    for src in sources:
+        last_used = state.get(src["name"])
+        if last_used != today:
+            available.append(src)
+    return available
+
+def mark_source_used(source_name, state):
+    """تحديث تاريخ آخر استخدام للمصدر إلى اليوم"""
+    today = date.today().isoformat()
+    state[source_name] = today
+    save_sources_state(state)
 
 # =========================
 # مصادر الأخبار
@@ -142,36 +193,53 @@ def get_topic(title: str) -> str:
     return "default"
 
 # =========================
-# جلب خبر واحد من مصدر عشوائي
+# جلب خبر واحد من مصدر متاح (غير مستخدم اليوم)
 # =========================
 def get_news():
-    sources = NEWS_SOURCES.copy()
-    random.shuffle(sources)
+    state = load_sources_state()
+    available_sources = get_available_sources(NEWS_SOURCES, state)
     
-    for source in sources:
-        print(f"🔍 جاري البحث في: {source['name']}")
-        feed = feedparser.parse(source["url"])
+    if not available_sources:
+        logger.warning("⚠️ لا توجد مصادر متاحة اليوم (جميعها استخدمت). توقف.")
+        return []
+    
+    # خلط المصادر المتاحة لزيادة العشوائية
+    random.shuffle(available_sources)
+    
+    posted_links = load_posted_news()
+    
+    for source in available_sources:
+        logger.info(f"🔍 جاري البحث في: {source['name']}")
+        try:
+            feed = feedparser.parse(source["url"])
+            if feed.bozo:  # وجود خطأ في التغذية
+                logger.warning(f"⚠️ خطأ في تغذية RSS لـ {source['name']}: {feed.bozo_exception}")
+                continue
+        except Exception as e:
+            logger.error(f"❌ فشل جلب RSS من {source['name']}: {e}")
+            continue
         
         for entry in feed.entries:
             norm_link = normalize_link(entry.link)
-            if norm_link in posted_news:
+            if norm_link in posted_links:
                 continue
                 
             content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
             image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
             image = image_match.group(1) if image_match else ""
             
-            print(f"✅ تم العثور على خبر جديد من {source['name']}")
+            logger.info(f"✅ تم العثور على خبر جديد من {source['name']}")
+            # نعيد الخبر مع اسم المصدر
             return [{
                 "title": entry.title,
                 "link": entry.link,
                 "norm_link": norm_link,
                 "image": image,
                 "source": source["name"]
-            }]
+            }], source["name"]  # نعيد اسم المصدر أيضاً لتحديث حالته
     
-    print("❌ لم يتم العثور على أي خبر جديد")
-    return []
+    logger.info("❌ لم يتم العثور على أي خبر جديد في المصادر المتاحة")
+    return [], None
 
 # =========================
 # Download + Validate Image
@@ -183,20 +251,25 @@ def download_image(url):
             with open(TEMP_IMAGE, "wb") as f:
                 f.write(res.content)
             return True
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Download image error: {e}")
     return False
 
 def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
             header = f.read(4)
-        return header[:3] == b"\xff\xd8\xff"
+        # التحقق من JPEG أو PNG
+        if header[:3] == b"\xff\xd8\xff":
+            return True
+        if header[:4] == b"\x89PNG":
+            return True
+        return False
     except:
         return False
 
 # =========================
-# 🔍 بحث بسيط في Google Images (بدون أي API Key)
+# 🔍 بحث بسيط في Google Images (بدون أي API Key) - اختياري
 # =========================
 def get_google_image(title: str) -> str:
     query = title.replace(" ", "+").replace(":", "").replace("?", "").replace("!", "")[:100]
@@ -206,13 +279,12 @@ def get_google_image(title: str) -> str:
     }
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        # استخراج أول صورة مباشرة من نتائج Google
         matches = re.findall(r'https?://[^"\']+\.(?:jpg|jpeg|png|webp|gif)', res.text, re.IGNORECASE)
         for m in matches:
             if len(m) > 40 and "google" not in m.lower() and "logo" not in m.lower():
                 return m
     except Exception as e:
-        print("Google Images Error:", e)
+        logger.error("Google Images Error:", e)
     return None
 
 # =========================
@@ -246,7 +318,7 @@ def generate_post(title):
         res_json = res.json()
         return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
-        print(f"❌ Gemini Error: {e}")
+        logger.error(f"❌ Gemini Error: {e}")
         return None
 
 # =========================
@@ -261,41 +333,45 @@ def post_to_facebook(message):
             res = requests.post(fb_url, data=payload, files=files, timeout=30)
         return res.json()
     except Exception as e:
-        print("Facebook API Error:", e)
+        logger.error("Facebook API Error:", e)
         return None
 
 # =========================
 # Main
 # =========================
 def main():
-    articles = get_news()
+    # تحميل الأخبار المنشورة سابقاً
+    posted_news = load_posted_news()
+    
+    # جلب خبر جديد مع اسم المصدر
+    articles, source_name = get_news()
     if not articles:
-        print("No new articles to post.")
+        logger.info("لا توجد أخبار جديدة للنشر.")
         return
 
     article = articles[0]
-    print(f"📝 جاري معالجة الخبر: {article['title']} (من {article['source']})")
+    logger.info(f"📝 جاري معالجة الخبر: {article['title']} (من {article['source']})")
 
     # === اختيار الصورة (ترتيب الأولوية) ===
     image_ok = False
 
     # 1. صورة الخبر الأصلية
     if article.get("image"):
-        print("🖼️ جاري تجربة صورة الخبر الأصلية...")
+        logger.info("🖼️ جاري تجربة صورة الخبر الأصلية...")
         image_ok = download_image(article["image"])
         if image_ok and validate_image():
-            print("✅ تم استخدام صورة الخبر الأصلية")
+            logger.info("✅ تم استخدام صورة الخبر الأصلية")
         else:
             image_ok = False
 
-    # 2. بحث في Google Images (الجديد)
+    # 2. بحث في Google Images (اختياري - يمكن تعطيله)
     if not image_ok:
-        print("🔍 جاري البحث التلقائي عن صورة مناسبة في Google Images...")
+        logger.info("🔍 جاري البحث التلقائي عن صورة مناسبة في Google Images...")
         google_url = get_google_image(article["title"])
         if google_url:
             image_ok = download_image(google_url)
             if image_ok and validate_image():
-                print("✅ تم العثور على صورة ممتازة من Google Images")
+                logger.info("✅ تم العثور على صورة ممتازة من Google Images")
             else:
                 image_ok = False
 
@@ -303,26 +379,38 @@ def main():
     if not image_ok:
         topic = get_topic(article["title"])
         backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-        print(f"🖼️ Using backup image for '{topic}'")
+        logger.info(f"🖼️ استخدام صورة احتياطية لموضوع '{topic}'")
         image_ok = download_image(backup_image)
-        if not image_ok:
-            print("❌ فشل تحميل الصورة، تخطي الخبر")
+        if not image_ok or not validate_image():
+            logger.error("❌ فشل تحميل الصورة، تخطي الخبر")
             return
 
+    # توليد نص المنشور
     post_text = generate_post(article["title"])
     if not post_text:
-        print("❌ فشل توليد المنشور.")
+        logger.error("❌ فشل توليد المنشور.")
         return
 
-    print("🚀 Posting to Facebook...")
+    # النشر على فيسبوك
+    logger.info("🚀 جاري النشر على فيسبوك...")
     res = post_to_facebook(post_text)
-    print("Facebook response:", res)
+    if res and "id" in res:
+        logger.info(f"✅ تم النشر بنجاح: {res['id']}")
+    else:
+        logger.error(f"❌ فشل النشر على فيسبوك: {res}")
+        return
 
+    # تحديث سجل الأخبار المنشورة
     posted_news[article["norm_link"]] = True
-    with open(POSTED_FILE, "w", encoding="utf-8") as f:
-        json.dump(posted_news, f, ensure_ascii=False, indent=2)
-    print(f"✅ تم النشر والحفظ بنجاح من {article['source']}")
+    save_posted_news(posted_news)
+    
+    # تحديث حالة المصدر (تم استخدامه اليوم)
+    if source_name:
+        state = load_sources_state()
+        mark_source_used(source_name, state)
+        logger.info(f"📅 تم تحديث حالة المصدر '{source_name}' لليوم")
 
+    # تنظيف الصورة المؤقتة
     try:
         os.remove(TEMP_IMAGE)
     except:
