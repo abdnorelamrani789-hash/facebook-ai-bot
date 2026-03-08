@@ -117,7 +117,7 @@ def save_used_images(used_set):
         logger.error(f"Error saving used images: {e}")
 
 # =========================
-# مصادر الأخبار (محدثة ومستقرة)
+# مصادر الأخبار (30 مصدر محدثة ومستقرة)
 # =========================
 NEWS_SOURCES = [
     # المصادر الأجنبية الموثوقة
@@ -151,20 +151,72 @@ NEWS_SOURCES = [
     {"name": "بي بي سي عربي - تكنولوجيا", "url": "https://www.bbc.com/arabic/technology/feed.xml"},
     {"name": "DW عربية - تكنولوجيا", "url": "https://rss.dw.com/ar/rss-tech"},
 ]
-
 # =========================
-# مكتبة الصور الاحتياطية (مختصرة للعرض - أكملها كما هي)
+# مكتبة الصور الاحتياطية (كاملة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
         "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
         "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg",
-        # ... باقي الروابط
+        "https://images.pexels.com/photos/1591060/pexels-photo-1591060.jpeg",
+        "https://images.pexels.com/photos/210745/pexels-photo-210745.jpeg",
+        "https://images.pexels.com/photos/275033/pexels-photo-275033.jpeg",
+        "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg",
+        "https://images.pexels.com/photos/3943746/pexels-photo-3943746.jpeg",
+        "https://images.pexels.com/photos/821738/pexels-photo-821738.jpeg",
+        "https://images.pexels.com/photos/577585/pexels-photo-577585.jpeg",
+        "https://images.pexels.com/photos/1591061/pexels-photo-1591061.jpeg",
+        "https://images.pexels.com/photos/3165336/pexels-photo-3165336.jpeg",
+        "https://images.pexels.com/photos/3943747/pexels-photo-3943747.jpeg"
     ],
-    "AI": [ ... ],
-    "tech": [ ... ],
-    "science": [ ... ],
-    "default": [ ... ]
+    "AI": [
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
+        "https://images.pexels.com/photos/256381/pexels-photo-256381.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
+        "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
+        "https://images.pexels.com/photos/5380797/pexels-photo-5380797.jpeg",
+        "https://images.pexels.com/photos/2058120/pexels-photo-2058120.jpeg",
+        "https://images.pexels.com/photos/8386438/pexels-photo-8386438.jpeg",
+        "https://images.pexels.com/photos/3861973/pexels-photo-3861973.jpeg",
+        "https://images.pexels.com/photos/256380/pexels-photo-256380.jpeg",
+        "https://images.pexels.com/photos/1181243/pexels-photo-1181243.jpeg",
+        "https://images.pexels.com/photos/5380798/pexels-photo-5380798.jpeg"
+    ],
+    "tech": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/459653/pexels-photo-459653.jpeg",
+        "https://images.pexels.com/photos/2588753/pexels-photo-2588753.jpeg",
+        "https://images.pexels.com/photos/3861971/pexels-photo-3861971.jpeg",
+        "https://images.pexels.com/photos/2058121/pexels-photo-2058121.jpeg",
+        "https://images.pexels.com/photos/1181245/pexels-photo-1181245.jpeg",
+        "https://images.pexels.com/photos/3165337/pexels-photo-3165337.jpeg",
+        "https://images.pexels.com/photos/459654/pexels-photo-459654.jpeg",
+        "https://images.pexels.com/photos/2588754/pexels-photo-2588754.jpeg"
+    ],
+    "science": [
+        "https://images.pexels.com/photos/247431/pexels-photo-247431.jpeg",
+        "https://images.pexels.com/photos/326709/pexels-photo-326709.jpeg",
+        "https://images.pexels.com/photos/1072824/pexels-photo-1072824.jpeg",
+        "https://images.pexels.com/photos/236047/pexels-photo-236047.jpeg",
+        "https://images.pexels.com/photos/2894944/pexels-photo-2894944.jpeg",
+        "https://images.pexels.com/photos/669015/pexels-photo-669015.jpeg",
+        "https://images.pexels.com/photos/1108572/pexels-photo-1108572.jpeg",
+        "https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg",
+        "https://images.pexels.com/photos/417173/pexels-photo-417173.jpeg",
+        "https://images.pexels.com/photos/572897/pexels-photo-572897.jpeg"
+    ],
+    "default": [
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg"
+    ]
+}
+    ]
 }
 
 # =========================
@@ -296,34 +348,45 @@ def get_google_image(title: str, used_images=None) -> str:
         return None
 
 # =========================
-# توليد المنشور عبر Gemini (مع تقليل الطول إذا لزم الأمر)
+# توليد المنشور عبر Gemini (نسخة محسنة للاحترافية)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
-أنت خبير تقني مغربي محترف ومؤثر.
-اكتب منشور احترافي، جذاب وطويل بالدارجة المغربية الأصيلة لصفحة "تقنية بالدارجة".
+أنت كاتب محتوى تقني محترف ومؤثر على وسائل التواصل الاجتماعي، تستهدف الجمهور المغربي الشاب المهتم بالتكنولوجيا. اكتب منشوراً احترافياً وجذاباً بالدارجة المغربية حول الخبر التالي:
+
 الخبر: "{title}"
-التعليمات الدقيقة:
-- ابدأ مباشرة بجملة قوية تجذب الانتباه.
-- شرح الخبر بطريقة مبسطة ومفصلة.
-- أبرز أهميته وتأثيره على حياتنا.
-- استعمل إيموجي تقنية بذكاء.
-- في النهاية أضف سطر منفصل يحتوي على بالضبط 4-5 هاشتاجات مناسبة.
-الهدف: منشور يولّد تفاعل عالي!
+
+المطلوب من المنشور بالتفصيل:
+- مقدمة قوية: ابدأ بجملة أو سؤال يثير الفضول ويجذب القارئ ليكمل القراءة.
+- شرح الخبر: اشرح الخبر بطريقة مبسطة وسلسة، مع تجنب التعقيدات التقنية غير الضرورية.
+- الأهمية والتأثير: بيّن لماذا هذا الخبر مهم للمغربي العادي، وكيف سيؤثر على حياته اليومية أو على مجال التكنولوجيا في المغرب.
+- إضافة لمسة شخصية: شارك رأيك أو توقعاتك حول الموضوع بطريقة ودية.
+- التفاعل: في النهاية، اطرح سؤالاً مفتوحاً للمتابعين يحفزهم على التعليق والمشاركة (مثل "شنو رأيك؟"، "واش كنستعملو؟"، "شفتو هاد الخبر؟").
+- الإيموجي: استخدم 3-5 إيموجيات مناسبة وموزعة بشكل طبيعي في النص (📱💻🚀🔥👨‍💻)، ليس مبالغاً فيه.
+- الهاشتاجات: أضف سطراً منفصلاً في النهاية يحتوي على 4-5 هاشتاجات بالدارجة أو بالإنجليزية، ذات صلة بالموضوع وحديثة (مثلاً #تكنولوجيا_المغرب #آبل #ذكاء_اصطناعي #أخبار_تقنية).
+- الطول: اجعل المنشور بين 1500 و 2000 حرف، بحيث يكون مفيداً دون إطالة مملة.
+
+نمط الكتابة: دارجة مغربية سليمة ومفهومة، مع إمكانية استخدام بعض المصطلحات التقنية الشائعة بالإنجليزية (مثل iPhone, AI, update). الأسلوب يجب أن يكون قريباً من القلب، وكأنك تخاطب صديقاً أو متابعاً مهتماً بالتكنولوجيا.
+
+ابدأ مباشرة بكتابة المنشور، بدون أي مقدمات أو تعليقات إضافية.
 """
+
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
+    
     try:
         res = requests.post(url, json=data, headers=headers, timeout=30)
         res.raise_for_status()
         res_json = res.json()
         post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        # تقليل طول النص إذا كان طويلاً جداً
+        
+        # تقليم النص إذا زاد عن الحد المسموح (2000 حرف)
         if len(post_text) > MAX_POST_LENGTH:
             logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، سيتم تقليمه إلى {MAX_POST_LENGTH}")
             post_text = post_text[:MAX_POST_LENGTH]
+        
         return post_text
     except Exception as e:
         logger.error(f"❌ Gemini Error: {e}")
