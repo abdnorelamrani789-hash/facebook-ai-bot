@@ -7,6 +7,8 @@ import re
 import logging
 from datetime import date
 from urllib.parse import urlparse, urlunparse
+from PIL import Image
+import io
 
 # =========================
 # إعداد التسجيل (logging)
@@ -29,6 +31,8 @@ TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 SOURCES_STATE_FILE = "sources_state.json"
 USED_IMAGES_FILE = "used_images.json"
+MAX_IMAGE_WIDTH = 1200  # أقصى عرض للصورة
+MAX_POST_LENGTH = 2000  # أقصى طول للمنشور (عدد الحروف)
 
 # =========================
 # تطبيع الروابط + تحميل posted_news
@@ -123,7 +127,7 @@ NEWS_SOURCES = [
     {"name": "Ars Technica", "url": "https://arstechnica.com/feed/"},
     {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
     {"name": "Android Authority", "url": "https://www.androidauthority.com/feed/"},
-    {"name": "CNET", "url": "https://www.cnet.com/rss/news/"},              # محدث
+    {"name": "CNET", "url": "https://www.cnet.com/rss/news/"},
     {"name": "Tom's Hardware", "url": "https://www.tomshardware.com/feeds/all"},
     {"name": "Android Police", "url": "https://www.androidpolice.com/feed/"},
     {"name": "9to5Mac", "url": "https://9to5mac.com/feed/"},
@@ -133,29 +137,30 @@ NEWS_SOURCES = [
     {"name": "Mashable", "url": "https://mashable.com/feed/"},
     {"name": "VentureBeat", "url": "https://venturebeat.com/feed/"},
     {"name": "PC Gamer", "url": "https://www.pcgamer.com/feed/"},
-    {"name": "TechRadar", "url": "https://www.techradar.com/feeds/news"},    # رابط بديل
     {"name": "MacRumors", "url": "https://www.macrumors.com/macrumors.xml"},
     {"name": "Slashdot", "url": "https://rss.slashdot.org/Slashdot/slashdotMain"},
     {"name": "Digital Trends", "url": "https://www.digitaltrends.com/feed/"},
-
     # المصادر العربية الموثوقة
     {"name": "عرب هاردوير", "url": "https://www.arabhardware.net/feed"},
     {"name": "البوابة التقنية AIT", "url": "https://aitnews.com/feed/"},
-    {"name": "تيك 24", "url": "https://tech24.ma/feed/"},                     # قد يكون غير مستقر لكن نحتفظ به مؤقتاً
+    {"name": "تيك 24", "url": "https://tech24.ma/feed/"},
     {"name": "البوابة العربية للأخبار التقنية", "url": "https://aitnews.com/feed/"},
     {"name": "عالم التقنية", "url": "https://www.tech-wd.com/wd/feed"},
     {"name": "سكاي نيوز عربية - تكنولوجيا", "url": "https://www.skynewsarabia.com/technology/rss"},
     {"name": "الجزيرة نت - تكنولوجيا", "url": "https://www.aljazeera.net/aljazeerarss/ae187c16-07be-4806-9602-4836b3fdbf06/62763653-6fe3-4c20-afd9-a12880b0a76c"},
-    {"name": "بي بي سي عربي - تكنولوجيا", "url": "https://www.bbc.com/arabic/technology/feed.xml"},  # محدث
-    {"name": "فرانس 24 - تكنولوجيا", "url": "https://www.france24.com/ar/technologies/rss"},        # رابط بديل
+    {"name": "بي بي سي عربي - تكنولوجيا", "url": "https://www.bbc.com/arabic/technology/feed.xml"},
     {"name": "DW عربية - تكنولوجيا", "url": "https://rss.dw.com/ar/rss-tech"},
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (كما هي)
+# مكتبة الصور الاحتياطية (مختصرة للعرض - أكملها كما هي)
 # =========================
 IMAGE_LIBRARY = {
-    "gaming": [ ... ],  # (نفس المحتوى السابق - اختصاراً)
+    "gaming": [
+        "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
+        "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg",
+        # ... باقي الروابط
+    ],
     "AI": [ ... ],
     "tech": [ ... ],
     "science": [ ... ],
@@ -163,7 +168,7 @@ IMAGE_LIBRARY = {
 }
 
 # =========================
-# تحديد الموضوع (نفسه)
+# تحديد الموضوع
 # =========================
 def get_topic(title: str) -> str:
     lower = title.lower()
@@ -226,17 +231,25 @@ def get_news():
     return [], None
 
 # =========================
-# دوال تحميل الصورة والتحقق منها (كما هي)
+# تحميل الصورة والتحقق منها + تغيير الحجم إذا لزم الأمر
 # =========================
-def download_image(url):
+def download_and_resize_image(url):
     try:
         res = requests.get(url, timeout=30)
         if res.status_code == 200 and "image" in res.headers.get("Content-Type", ""):
-            with open(TEMP_IMAGE, "wb") as f:
-                f.write(res.content)
+            # فتح الصورة باستخدام PIL
+            img = Image.open(io.BytesIO(res.content))
+            # تغيير الحجم إذا كان العرض أكبر من MAX_IMAGE_WIDTH
+            if img.width > MAX_IMAGE_WIDTH:
+                ratio = MAX_IMAGE_WIDTH / img.width
+                new_height = int(img.height * ratio)
+                img = img.resize((MAX_IMAGE_WIDTH, new_height), Image.LANCZOS)
+                logger.info(f"🖼️ تم تغيير حجم الصورة من {img.width}x{img.height} إلى {MAX_IMAGE_WIDTH}x{new_height}")
+            # حفظ الصورة بصيغة JPEG بجودة 85% لتقليل الحجم
+            img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
             return True
     except Exception as e:
-        logger.error(f"Download image error: {e}")
+        logger.error(f"Download/resize image error: {e}")
     return False
 
 def validate_image():
@@ -283,7 +296,7 @@ def get_google_image(title: str, used_images=None) -> str:
         return None
 
 # =========================
-# توليد المنشور عبر Gemini
+# توليد المنشور عبر Gemini (مع تقليل الطول إذا لزم الأمر)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
@@ -291,27 +304,27 @@ def generate_post(title):
     prompt = f"""
 أنت خبير تقني مغربي محترف ومؤثر.
 اكتب منشور احترافي، جذاب وطويل بالدارجة المغربية الأصيلة لصفحة "تقنية بالدارجة".
-
 الخبر: "{title}"
-
 التعليمات الدقيقة:
 - ابدأ مباشرة بجملة قوية تجذب الانتباه.
 - شرح الخبر بطريقة مبسطة ومفصلة.
 - أبرز أهميته وتأثيره على حياتنا.
 - استعمل إيموجي تقنية بذكاء.
 - في النهاية أضف سطر منفصل يحتوي على بالضبط 4-5 هاشتاجات مناسبة.
-
 الهدف: منشور يولّد تفاعل عالي!
 """
-
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
-
     try:
         res = requests.post(url, json=data, headers=headers, timeout=30)
         res.raise_for_status()
         res_json = res.json()
-        return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # تقليل طول النص إذا كان طويلاً جداً
+        if len(post_text) > MAX_POST_LENGTH:
+            logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، سيتم تقليمه إلى {MAX_POST_LENGTH}")
+            post_text = post_text[:MAX_POST_LENGTH]
+        return post_text
     except Exception as e:
         logger.error(f"❌ Gemini Error: {e}")
         return None
@@ -351,7 +364,7 @@ def main():
     # 1. صورة الخبر الأصلية
     if article.get("image"):
         logger.info("🖼️ جاري تجربة صورة الخبر الأصلية...")
-        image_ok = download_image(article["image"])
+        image_ok = download_and_resize_image(article["image"])
         if image_ok and validate_image():
             logger.info("✅ تم استخدام صورة الخبر الأصلية")
         else:
@@ -362,7 +375,7 @@ def main():
         logger.info("🔍 جاري البحث التلقائي عن صورة مناسبة في Google Images...")
         google_url = get_google_image(article["title"], used_images)
         if google_url:
-            image_ok = download_image(google_url)
+            image_ok = download_and_resize_image(google_url)
             if image_ok and validate_image():
                 logger.info("✅ تم العثور على صورة ممتازة من Google Images")
                 used_images.add(google_url)
@@ -375,7 +388,7 @@ def main():
         topic = get_topic(article["title"])
         backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
         logger.info(f"🖼️ استخدام صورة احتياطية لموضوع '{topic}'")
-        image_ok = download_image(backup_image)
+        image_ok = download_and_resize_image(backup_image)
         if not image_ok or not validate_image():
             logger.error("❌ فشل تحميل الصورة، تخطي الخبر")
             return
