@@ -28,7 +28,7 @@ if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
 TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 SOURCES_STATE_FILE = "sources_state.json"
-USED_IMAGES_FILE = "used_images.json"   # ملف جديد للصور المستخدمة
+USED_IMAGES_FILE = "used_images.json"
 
 # =========================
 # تطبيع الروابط + تحميل posted_news
@@ -113,9 +113,10 @@ def save_used_images(used_set):
         logger.error(f"Error saving used images: {e}")
 
 # =========================
-# مصادر الأخبار (الآن 20 مصدر)
+# مصادر الأخبار (30 مصدر)
 # =========================
 NEWS_SOURCES = [
+    # المصادر الأصلية (11)
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
     {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
     {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
@@ -127,7 +128,7 @@ NEWS_SOURCES = [
     {"name": "البوابة التقنية AIT", "url": "https://aitnews.com/feed/"},
     {"name": "تيك 24", "url": "https://tech24.ma/feed/"},
     {"name": "ياسين تك", "url": "https://www.yasintech.com/feed/"},
-    # المصادر الجديدة (9)
+    # المصادر السابقة (9)
     {"name": "Tom's Hardware", "url": "https://www.tomshardware.com/feeds/all"},
     {"name": "Android Police", "url": "https://www.androidpolice.com/feed/"},
     {"name": "9to5Mac", "url": "https://9to5mac.com/feed/"},
@@ -136,11 +137,22 @@ NEWS_SOURCES = [
     {"name": "البوابة العربية للأخبار التقنية", "url": "https://aitnews.com/feed/"},
     {"name": "سعودي شات", "url": "https://www.saudishat.com/feed"},
     {"name": "مجلة تقنية", "url": "https://www.magtechnia.com/feed/"},
-    {"name": "عالم التقنية", "url": "https://www.tech-wd.com/wd/feed"}
+    {"name": "عالم التقنية", "url": "https://www.tech-wd.com/wd/feed"},
+    # مصادر إضافية جديدة (10)
+    {"name": "The Next Web", "url": "https://thenextweb.com/feed/"},
+    {"name": "Mashable", "url": "https://mashable.com/feed/"},
+    {"name": "VentureBeat", "url": "https://venturebeat.com/feed/"},
+    {"name": "TechRadar", "url": "https://www.techradar.com/feeds/articles"},
+    {"name": "PC Gamer", "url": "https://www.pcgamer.com/feed/"},
+    {"name": "ITWorld", "url": "https://www.itworld.com/feed"},
+    {"name": "سكاي نيوز عربية - تكنولوجيا", "url": "https://www.skynewsarabia.com/technology/rss"},
+    {"name": "الجزيرة نت - تكنولوجيا", "url": "https://www.aljazeera.net/aljazeerarss/ae187c16-07be-4806-9602-4836b3fdbf06/62763653-6fe3-4c20-afd9-a12880b0a76c"},
+    {"name": "بي بي سي عربي - تكنولوجيا", "url": "https://www.bbc.com/arabic/technology/index.xml"},
+    {"name": "فرانس 24 - تكنولوجيا", "url": "https://www.france24.com/ar/tag/technologies/rss"}
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (كاملة - نفس الشيء)
+# مكتبة الصور الاحتياطية (كاملة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
@@ -237,7 +249,10 @@ def get_news():
     for source in available_sources:
         logger.info(f"🔍 جاري البحث في: {source['name']}")
         try:
-            feed = feedparser.parse(source["url"])
+            # استخدام requests لجلب المحتوى أولاً للتحكم في timeout
+            resp = requests.get(source["url"], timeout=15)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
             if feed.bozo:
                 logger.warning(f"⚠️ خطأ في تغذية RSS لـ {source['name']}: {feed.bozo_exception}")
                 continue
