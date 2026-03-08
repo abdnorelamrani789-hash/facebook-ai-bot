@@ -1,171 +1,163 @@
 import os
 import requests
 import random
-import time
+import json
 
-# =========================
-# Environment Variables
-# =========================
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
-if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
-    raise Exception("Missing required environment variables")
-
-TEMP_IMAGE = "temp_image.jpg"
-
-# =========================
-# Image Library (real images)
-# =========================
-# ضع هنا روابط حقيقية للصور لكل موضوع
-IMAGE_LIBRARY = {
-    "cybersecurity": [
-        "https://images.pexels.com/photos/547429/pexels-photo-547429.jpeg",
-        "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg",
-        "https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg"
-    ],
-    "programming": [
-        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
-        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
-    ],
-    "AI": [
-        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
-        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
-        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg"
-    ],
-    "default": [
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
-    ]
-}
+TEMP_IMAGE = "ai_news.jpg"
+POSTED_FILE = "posted_news.json"
 
 # =========================
-# Generate Content
+# Load previously posted news
 # =========================
-def generate_content_and_image_prompt():
+def load_posted_news():
+    if os.path.exists(POSTED_FILE):
+        with open(POSTED_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_posted_news(posted):
+    with open(POSTED_FILE, "w") as f:
+        json.dump(posted, f)
+
+# =========================
+# Get trending tech news
+# =========================
+def get_trending_news():
+    url = "https://newsapi.org/v2/top-headlines"
+    params = {
+        "category": "technology",
+        "language": "en",
+        "pageSize": 20,
+        "apiKey": NEWS_API_KEY
+    }
+    r = requests.get(url, params=params, timeout=20)
+    data = r.json()
+    if "articles" not in data:
+        print("No articles:", data)
+        return None
+
+    posted = load_posted_news()
+    for article in data["articles"]:
+        if article["url"] not in posted and article.get("urlToImage"):
+            return {
+                "title": article["title"],
+                "description": article["description"] or "",
+                "url": article["url"],
+                "image": article["urlToImage"]
+            }
+    return None
+
+# =========================
+# Download image
+# =========================
+def download_image(url):
+    try:
+        img = requests.get(url, timeout=20)
+        with open(TEMP_IMAGE, "wb") as f:
+            f.write(img.content)
+        return True
+    except Exception as e:
+        print("Image download failed:", e)
+        return False
+
+# =========================
+# Gemini summarize & translate
+# =========================
+def summarize_news(article):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
-    prompt = """
-أنت خبير في الأمن المعلوماتي والشبكات.
+    prompt = f"""
+أنت صانع محتوى تقني.
 
-اكتب منشوراً احترافياً ومطولاً بالدارجة المغربية لصفحة "تقنية بالدارجة".
+المطلوب:
+1. اكتب Hook قوي يجذب الانتباه
+2. لخص الخبر بالدارجة المغربية
+3. اجعل النص مناسب لفايسبوك
+4. أضف 2-3 ايموجي تقنية
+5. في النهاية ضع سؤال للتفاعل
+6. أضف Hashtags مقترحة
 
-القواعد:
-- ابدأ المنشور مباشرة بدون مقدمة.
-- اشرح الفكرة بوضوح وبطريقة مبسطة.
-- استعمل تنسيق جيد وفواصل.
-- أضف بعض الإيموجي التقنية.
-- في النهاية أضف سؤالاً لتحفيز التفاعل.
+العنوان:
+{article['title']}
 
-في آخر سطر أكتب:
-
-IMAGE_PROMPT: وصف إنجليزي لصورة تقنية احترافية متعلقة بالموضوع.
+الوصف:
+{article['description']}
 """
 
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        response = requests.post(url, json=data, headers=headers, timeout=30)
-        res_json = response.json()
-
-        if "candidates" not in res_json:
-            print("Gemini API error:", res_json)
-            return None, None
-
-        full_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-
-        if "IMAGE_PROMPT:" in full_text:
-            text, img_prompt = full_text.split("IMAGE_PROMPT:", 1)
-            return text.strip(), img_prompt.strip()
-
-        return full_text.strip(), "cybersecurity"
-
+        r = requests.post(url, headers=headers, json=data, timeout=30)
+        res = r.json()
+        text = res["candidates"][0]["content"]["parts"][0]["text"]
+        return text
     except Exception as e:
-        print("Gemini Error:", e)
-        return None, None
+        print("Gemini summarize error:", e)
+        return article['title']
 
 # =========================
-# Download Image
+# Generate AI image
 # =========================
-def download_image(topic):
-    # اختيار الموضوع الصحيح أو default
-    topic_key = topic.lower() if topic.lower() in IMAGE_LIBRARY else "default"
-    image_url = random.choice(IMAGE_LIBRARY[topic_key])
-    print(f"Downloading image for topic '{topic}': {image_url}")
-
+def generate_ai_image(prompt):
     try:
-        img_res = requests.get(image_url, timeout=30)
-        if img_res.status_code == 200 and 'image' in img_res.headers.get('Content-Type', ''):
-            with open(TEMP_IMAGE, "wb") as f:
-                f.write(img_res.content)
-            return True
-        else:
-            raise Exception("Invalid image response")
+        image_url = "https://image.pollinations.ai/prompt/"
+        final_url = image_url + prompt.replace(" ", "%20")
+        img = requests.get(final_url, timeout=20)
+        with open(TEMP_IMAGE, "wb") as f:
+            f.write(img.content)
+        return True
     except Exception as e:
-        print("Image download failed:", e)
-        return False
-
-# =========================
-# Validate Image
-# =========================
-def validate_image():
-    try:
-        with open(TEMP_IMAGE, "rb") as f:
-            header = f.read(4)
-        if header[:3] == b"\xff\xd8\xff":
-            return True
-        print("Invalid JPEG header")
-        return False
-    except:
+        print("AI Image generation failed:", e)
         return False
 
 # =========================
 # Post to Facebook
 # =========================
-def post_to_facebook(message):
-    fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
+def post_to_facebook(text):
     try:
-        with open(TEMP_IMAGE, "rb") as img_file:
-            files = {"source": ("post.jpg", img_file, "image/jpeg")}
-            payload = {"caption": message, "access_token": FB_PAGE_ACCESS_TOKEN}
-            response = requests.post(fb_url, data=payload, files=files, timeout=30)
-        return response.json()
+        fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
+        with open(TEMP_IMAGE, "rb") as img:
+            payload = {
+                "caption": text,
+                "access_token": FB_PAGE_ACCESS_TOKEN
+            }
+            files = {"source": img}
+            r = requests.post(fb_url, data=payload, files=files, timeout=30)
+            return r.json()
     except Exception as e:
-        print("Facebook API Error:", e)
+        print("Facebook post error:", e)
         return None
 
 # =========================
 # Main
 # =========================
 def main():
-    print("Generating content...")
-    content, img_prompt = generate_content_and_image_prompt()
-
-    if not content:
-        print("Failed to generate content")
+    article = get_trending_news()
+    if not article:
+        print("No new article found")
         return
 
-    print("Content generated successfully")
+    print("Posting news:", article["title"])
 
-    if not download_image(img_prompt):
-        print("Image download failed")
-        return
+    if not download_image(article["image"]):
+        print("Downloading original image failed, generating AI image...")
+        generate_ai_image(article["title"])
 
-    if not validate_image():
-        print("Image validation failed")
-        return
-
-    print("Posting to Facebook...")
-    result = post_to_facebook(content)
+    summary = summarize_news(article)
+    result = post_to_facebook(summary)
     print("Facebook response:", result)
 
-    try:
-        os.remove(TEMP_IMAGE)
-    except:
-        pass
+    # Save posted news
+    posted = load_posted_news()
+    posted.append(article["url"])
+    save_posted_news(posted)
 
 if __name__ == "__main__":
     main()
