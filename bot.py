@@ -7,12 +7,12 @@ import re
 from urllib.parse import urlparse, urlunparse
 
 # =========================
-# Environment Variables + إعدادات Gemini الجديدة
+# Environment Variables
 # =========================
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.5-flash"   # ← النموذج الجديد المحدث (مارس 2026)
+MODEL_NAME = "gemini-2.5-flash"
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
@@ -44,7 +44,7 @@ else:
     posted_news = {}
 
 # =========================
-# مصادر الأخبار (نفس السابق)
+# مصادر الأخبار
 # =========================
 NEWS_SOURCES = [
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
@@ -61,7 +61,7 @@ NEWS_SOURCES = [
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (48 صورة - كاملة)
+# مكتبة الصور الاحتياطية (محدثة + فئة science جديدة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
@@ -106,6 +106,18 @@ IMAGE_LIBRARY = {
         "https://images.pexels.com/photos/459654/pexels-photo-459654.jpeg",
         "https://images.pexels.com/photos/2588754/pexels-photo-2588754.jpeg"
     ],
+    "science": [  # ← فئة جديدة للأخبار العلمية والبيئية
+        "https://images.pexels.com/photos/247431/pexels-photo-247431.jpeg",
+        "https://images.pexels.com/photos/326709/pexels-photo-326709.jpeg",
+        "https://images.pexels.com/photos/1072824/pexels-photo-1072824.jpeg",
+        "https://images.pexels.com/photos/236047/pexels-photo-236047.jpeg",
+        "https://images.pexels.com/photos/2894944/pexels-photo-2894944.jpeg",
+        "https://images.pexels.com/photos/669015/pexels-photo-669015.jpeg",
+        "https://images.pexels.com/photos/1108572/pexels-photo-1108572.jpeg",
+        "https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg",
+        "https://images.pexels.com/photos/417173/pexels-photo-417173.jpeg",
+        "https://images.pexels.com/photos/572897/pexels-photo-572897.jpeg"
+    ],
     "default": [
         "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
         "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
@@ -115,20 +127,22 @@ IMAGE_LIBRARY = {
 }
 
 # =========================
-# تحديد الموضوع
+# تحديد الموضوع (محسّن جدًا)
 # =========================
 def get_topic(title: str) -> str:
     lower = title.lower()
     if any(k in lower for k in ["game", "playstation", "nintendo", "xbox", "sony", "gaming", "esports"]):
         return "gaming"
-    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "llm", "neural", "gpt"]):
+    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "gpt", "llm", "neural"]):
         return "AI"
-    elif any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "android", "pixel", "tech"]):
+    elif any(k in lower for k in ["elephant", "ghost", "wildlife", "animal", "nature", "forest", "discovery", "research", "scientist", "science", "ecology", "conservation"]):
+        return "science"
+    elif any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "android", "pixel", "tech", "smartphone"]):
         return "tech"
     return "default"
 
 # =========================
-# جلب خبر واحد فقط من مصدر عشوائي
+# جلب خبر واحد من مصدر عشوائي
 # =========================
 def get_news():
     sources = NEWS_SOURCES.copy()
@@ -160,7 +174,7 @@ def get_news():
     return []
 
 # =========================
-# Download Image + Validate
+# Download + Validate Image
 # =========================
 def download_image(url):
     try:
@@ -182,26 +196,25 @@ def validate_image():
         return False
 
 # =========================
-# Generate Post - باستخدام النموذج الجديد gemini-2.5-flash
+# Generate Post - برومبت محدث (هاشتاجات إجبارية)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
-أنت خبير تقني مغربي محترف ومؤثر على فيسبوك.
+أنت خبير تقني مغربي محترف ومؤثر.
 اكتب منشور احترافي، جذاب وطويل بالدارجة المغربية الأصيلة لصفحة "تقنية بالدارجة".
 
 الخبر: "{title}"
 
 التعليمات الدقيقة:
-- ابدأ مباشرة بجملة قوية تجذب الانتباه (بدون أي مقدمة زائدة).
-- شرح الخبر بطريقة مبسطة ومفصلة تجعل أي واحد عادي يفهم.
-- أبرز أهمية الخبر وتأثيره على حياتنا اليومية.
-- استعمل إيموجي تقنية بذكاء واعتدال.
-- خلي اللغة حماسية وطبيعية كأنك تكتب لصحابك.
-- في النهاية ضع سؤال تفاعلي قوي ومفتوح يحفز على التعليق والمشاركة.
+- ابدأ مباشرة بجملة قوية تجذب الانتباه.
+- شرح الخبر بطريقة مبسطة ومفصلة.
+- أبرز أهميته وتأثيره على حياتنا.
+- استعمل إيموجي تقنية بذكاء.
+- في النهاية أضف سطر منفصل يحتوي على بالضبط 4-5 هاشتاجات مناسبة (مثل #تقنية_بالدارجة #AI #تكنولوجيا #مغرب #علم #OpenAI ...).
 
-الهدف: المنشور يولد تفاعل عالي جداً!
+الهدف: منشور يولّد تفاعل عالي!
 """
 
     headers = {"Content-Type": "application/json"}
@@ -214,8 +227,6 @@ def generate_post(title):
         return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print(f"❌ Gemini Error ({MODEL_NAME}):", e)
-        if hasattr(e, "response") and e.response is not None:
-            print("Response text:", e.response.text)
         return None
 
 # =========================
@@ -245,7 +256,6 @@ def main():
     article = articles[0]
     print(f"📝 جاري معالجة الخبر: {article['title']} (من {article['source']})")
 
-    # تنزيل الصورة
     image_ok = False
     if article.get("image"):
         image_ok = download_image(article["image"])
@@ -263,14 +273,13 @@ def main():
 
     post_text = generate_post(article["title"])
     if not post_text:
-        print("❌ فشل توليد المنشور، توقف التشغيل.")
+        print("❌ فشل توليد المنشور.")
         return
 
     print("🚀 Posting to Facebook...")
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # حفظ الخبر
     posted_news[article["norm_link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
