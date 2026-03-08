@@ -10,7 +10,7 @@ import feedparser
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-NEWS_RSS = os.getenv("NEWS_RSS", "https://www.theverge.com/rss/index.xml")  # يمكن تغييره لأي مصدر مفتوح
+NEWS_RSS = os.getenv("NEWS_RSS", "https://www.theverge.com/rss/index.xml")
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
@@ -28,20 +28,16 @@ else:
     posted_news = {}
 
 # =========================
-# Backup Images per Topic
+# Image Library (backup images by topic)
 # =========================
-BACKUP_IMAGES = {
+IMAGE_LIBRARY = {
     "gaming": [
         "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
         "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg"
     ],
-    "AI": [
+    "tech": [
         "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
-        "https://images.pexels.com/photos/547429/pexels-photo-547429.jpeg"
-    ],
-    "programming": [
-        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
-        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg"
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg"
     ],
     "default": [
         "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
@@ -54,7 +50,7 @@ BACKUP_IMAGES = {
 def download_image(url):
     try:
         res = requests.get(url, timeout=30)
-        if res.status_code == 200 and "image" in res.headers.get("Content-Type", ""):
+        if res.status_code == 200 and "image" in res.headers.get("Content-Type", "") and len(res.content) > 1000:
             with open(TEMP_IMAGE, "wb") as f:
                 f.write(res.content)
             return True
@@ -71,7 +67,7 @@ def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
             header = f.read(4)
-        if header[:3] == b"\xff\xd8\xff":
+        if header[:3] == b"\xff\xd8\xff":  # JPEG
             return True
         print("Invalid JPEG header")
         return False
@@ -79,14 +75,29 @@ def validate_image():
         return False
 
 # =========================
-# Generate Post via Gemini
+# Fetch News
 # =========================
-def generate_post(article_title):
+def get_news():
+    feed = feedparser.parse(NEWS_RSS)
+    for entry in feed.entries:
+        link = entry.get("link")
+        if link and link not in posted_news:
+            media = entry.get("media_content", [])
+            image_url = ""
+            if isinstance(media, list) and len(media) > 0:
+                image_url = media[0].get("url", "")
+            return {"title": entry.get("title", ""), "link": link, "image": image_url}
+    return None
+
+# =========================
+# Gemini Content Generation
+# =========================
+def generate_post(title):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
-أنت خبير في التقنية. عندك خبر: "{article_title}".
+أنت خبير في التقنية. عندك خبر: "{title}".
 
 اكتب منشور احترافي وطويل بالدارجة المغربية لصفحة "تقنية بالدارجة"، بدون مقدمة زايدة.
 اشرح الخبر بطريقة مفهومة وبسيطة، استعمل إيموجي تقنية.
@@ -112,6 +123,9 @@ def generate_post(article_title):
 # Post to Facebook
 # =========================
 def post_to_facebook(message):
+    if not os.path.exists(TEMP_IMAGE):
+        print("No image to post, aborting...")
+        return None
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
         with open(TEMP_IMAGE, "rb") as img_file:
@@ -124,19 +138,15 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Fetch News
+# Get backup image for topic
 # =========================
-def get_news():
-    feed = feedparser.parse(NEWS_RSS)
-    for entry in feed.entries:
-        link = entry.get("link")
-        if link and link not in posted_news:
-            media = entry.get("media_content", [])
-            image_url = ""
-            if isinstance(media, list) and len(media) > 0:
-                image_url = media[0].get("url", "")
-            return {"title": entry.get("title", ""), "link": link, "image": image_url}
-    return None
+def get_backup_image(title):
+    title_lower = title.lower()
+    if "playstation" in title_lower or "gaming" in title_lower:
+        topic = "gaming"
+    else:
+        topic = "tech"
+    return random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
 
 # =========================
 # Main
@@ -149,19 +159,20 @@ def main():
 
     print(f"Generating post for: {article['title']}")
 
-    # تنزيل صورة الخبر الأصلية أولاً
     image_downloaded = False
     if article.get("image"):
         image_downloaded = download_image(article["image"])
         if image_downloaded and not validate_image():
             image_downloaded = False
 
-    # إذا ما نجحات صورة الخبر، استخدم صورة احتياطية مناسبة
+    # إذا فشل تحميل صورة الخبر الأصلي، استعمل صورة احتياطية
     if not image_downloaded:
-        topic = "gaming" if "game" in article["title"].lower() else "AI"  # بسيطة لتصنيف الخبر
-        backup_url = random.choice(BACKUP_IMAGES.get(topic, BACKUP_IMAGES["default"]))
-        print(f"Using backup image for topic '{topic}': {backup_url}")
-        download_image(backup_url)
+        backup_url = get_backup_image(article["title"])
+        print(f"Using backup image: {backup_url}")
+        image_downloaded = download_image(backup_url)
+        if image_downloaded and not validate_image():
+            print("Backup image invalid")
+            image_downloaded = False
 
     # توليد النص
     post_text = generate_post(article["title"])
@@ -174,7 +185,7 @@ def main():
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # تسجيل الخبر كمنشور لتجنب التكرار
+    # تسجيل الخبر كمنشور
     posted_news[article["link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
