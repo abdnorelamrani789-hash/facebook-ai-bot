@@ -66,31 +66,27 @@ def get_news():
     return None
 
 # =========================
-# توليد منشور احترافي
+# توليد منشور احترافي بالدارجة
 # =========================
 def generate_post(article):
     prompt = f"""
-اكتب منشور فايسبوك احترافي بالدارجة المغربية حول خبر تقني.
+أنت خبير في صياغة محتوى فايسبوك تقني.  
+
+اكتب منشور احترافي **بالدارجة المغربية** حول خبر تقني، بدون أي مقدمة خارجية، وبدون تكرار العنوان.  
 
 القواعد:
-- بدون أي مقدمة أو زيادات
-- لا تكرر العنوان
-- شرح الخبر بطريقة بسيطة وواضحة
 - طول المنشور بين 4 و6 أسطر
-- استعمل 3 إيموجي تقنية
-- أضف سؤال في النهاية لتحفيز النقاش
+- استخدم 3 إيموجي تقنية
+- أضف سؤال في النهاية لتحفيز التفاعل
 - أضف هاشتاغات تقنية مناسبة
 
-العنوان:
-{article['title']}
-
-الوصف:
-{article['desc']}
+العنوان: {article['title']}
+الوصف: {article['desc']}
 """
-
-    response = client.responses.create(
+    response = client.text.generate(
         model="gemini-1.5",
-        input=prompt
+        prompt=prompt,
+        max_output_tokens=500
     )
 
     return response.output_text.strip()
@@ -120,7 +116,7 @@ def run():
     print("Generating post...")
     post_text = generate_post(article)
 
-    # استخدم صورة الخبر الأصلية
+    # استخدام صورة الخبر الأصلية
     image_url = article["image"]
     if not image_url:
         image_url = "https://via.placeholder.com/1200x630.png?text=Tech+News"  # fallback
