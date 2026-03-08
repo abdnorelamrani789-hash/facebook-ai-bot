@@ -1,31 +1,54 @@
-name: AI Tech News Bot
+name: تقنية بالدارجة - تشغيل البوت
 
 on:
   schedule:
-    - cron: '0 */3 * * *'  # كل 3 ساعات
-  workflow_dispatch:
+    - cron: '0 * * * *'     # كل ساعة (يمكن تغييره لكل 30 دقيقة: '*/30 * * * *')
+  workflow_dispatch:        # زر "Run workflow" يدوي من GitHub
+
+permissions:
+  contents: write          # مهم عشان يقدر يحفظ posted_news.json
 
 jobs:
-  post_news:
+  run-bot:
     runs-on: ubuntu-latest
-    env:
-      FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-      FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: جلب الكود
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: تثبيت Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: '3.12'
 
-      - name: Install dependencies
+      - name: تثبيت المكتبات المطلوبة
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install feedparser requests
 
-      - name: Run AI Tech News Bot
+      - name: استرجاع ملف posted_news.json من السابق
+        uses: actions/cache@v4
+        with:
+          path: posted_news.json
+          key: posted-news-cache-v1
+          restore-keys: |
+            posted-news-cache-
+
+      - name: تشغيل البوت
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
+
+      - name: حفظ التغييرات في posted_news.json
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add posted_news.json
+          if git diff --staged --quiet; then
+            echo "✅ لا تغييرات جديدة في posted_news.json"
+          else
+            git commit -m "Update posted_news.json - $(date '+%Y-%m-%d %H:%M')"
+            git push
+            echo "✅ تم حفظ الخبراء الجدد بنجاح"
+          fi
