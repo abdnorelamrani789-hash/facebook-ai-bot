@@ -7,11 +7,12 @@ import re
 from urllib.parse import urlparse, urlunparse
 
 # =========================
-# Environment Variables
+# Environment Variables + إعدادات Gemini الجديدة
 # =========================
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL_NAME = "gemini-2.5-flash"   # ← النموذج الجديد المحدث (مارس 2026)
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
@@ -43,10 +44,9 @@ else:
     posted_news = {}
 
 # =========================
-# مصادر الأخبار (إنجليزية + عربية)
+# مصادر الأخبار (نفس السابق)
 # =========================
 NEWS_SOURCES = [
-    # مصادر إنجليزية
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
     {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
     {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
@@ -54,8 +54,6 @@ NEWS_SOURCES = [
     {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
     {"name": "Android Authority", "url": "https://www.androidauthority.com/feed/"},
     {"name": "CNET", "url": "https://www.cnet.com/rss/"},
-    
-    # مصادر عربية
     {"name": "عرب هاردوير", "url": "https://www.arabhardware.net/feed"},
     {"name": "البوابة التقنية AIT", "url": "https://aitnews.com/feed/"},
     {"name": "تيك 24", "url": "https://tech24.ma/feed/"},
@@ -63,7 +61,7 @@ NEWS_SOURCES = [
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (48 صورة عالية الجودة - كاملة)
+# مكتبة الصور الاحتياطية (48 صورة - كاملة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
@@ -123,7 +121,7 @@ def get_topic(title: str) -> str:
     lower = title.lower()
     if any(k in lower for k in ["game", "playstation", "nintendo", "xbox", "sony", "gaming", "esports"]):
         return "gaming"
-    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "llm", "neural"]):
+    elif any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "llm", "neural", "gpt"]):
         return "AI"
     elif any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "android", "pixel", "tech"]):
         return "tech"
@@ -162,7 +160,7 @@ def get_news():
     return []
 
 # =========================
-# Download Image
+# Download Image + Validate
 # =========================
 def download_image(url):
     try:
@@ -175,9 +173,6 @@ def download_image(url):
         pass
     return False
 
-# =========================
-# Validate Image
-# =========================
 def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
@@ -187,10 +182,10 @@ def validate_image():
         return False
 
 # =========================
-# Generate Post - برومبت محترف لزيادة التفاعل
+# Generate Post - باستخدام النموذج الجديد gemini-2.5-flash
 # =========================
 def generate_post(title):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
 أنت خبير تقني مغربي محترف ومؤثر على فيسبوك.
@@ -204,7 +199,7 @@ def generate_post(title):
 - أبرز أهمية الخبر وتأثيره على حياتنا اليومية.
 - استعمل إيموجي تقنية بذكاء واعتدال.
 - خلي اللغة حماسية وطبيعية كأنك تكتب لصحابك.
-- في النهاية ضع سؤال تفاعلي قوي ومفتوح يحفز على التعليق والمشاركة (مثل: شنو رأيكم؟ هل جربتوها؟ واش غادي تشتريو؟ هل بغيتو تفاصيل أكثر؟...).
+- في النهاية ضع سؤال تفاعلي قوي ومفتوح يحفز على التعليق والمشاركة.
 
 الهدف: المنشور يولد تفاعل عالي جداً!
 """
@@ -218,7 +213,9 @@ def generate_post(title):
         res_json = res.json()
         return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
-        print("Gemini Error:", e)
+        print(f"❌ Gemini Error ({MODEL_NAME}):", e)
+        if hasattr(e, "response") and e.response is not None:
+            print("Response text:", e.response.text)
         return None
 
 # =========================
@@ -237,7 +234,7 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Main - خبر واحد فقط
+# Main
 # =========================
 def main():
     articles = get_news()
@@ -266,6 +263,7 @@ def main():
 
     post_text = generate_post(article["title"])
     if not post_text:
+        print("❌ فشل توليد المنشور، توقف التشغيل.")
         return
 
     print("🚀 Posting to Facebook...")
@@ -278,7 +276,6 @@ def main():
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
     print(f"✅ تم النشر والحفظ بنجاح من {article['source']}")
 
-    # تنظيف
     try:
         os.remove(TEMP_IMAGE)
     except:
