@@ -1,9 +1,9 @@
 name: AI Tech News Bot
 
+# تشغيل كل 3 ساعات + إمكانية التشغيل يدوياً
 on:
   schedule:
-    # كل 3 ساعات
-    - cron: '0 */3 * * *'
+    - cron: '0 */3 * * *'   # كل 3 ساعات
   workflow_dispatch:
 
 jobs:
@@ -29,5 +29,4 @@ jobs:
         FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-      run: |
-        python ai_tech_news_bot.py
+      run: python bot.py
