@@ -12,11 +12,10 @@ from urllib.parse import urlparse, urlunparse
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")      # ← جديد: لازم تضيفه
 MODEL_NAME = "gemini-2.5-flash"
 
-if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY or not PEXELS_API_KEY:
-    raise Exception("Missing required environment variables (أضف PEXELS_API_KEY)")
+if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
+    raise Exception("Missing required environment variables")
 
 TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
@@ -62,12 +61,51 @@ NEWS_SOURCES = [
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (48 صورة + science)
+# مكتبة الصور الاحتياطية (كاملة)
 # =========================
 IMAGE_LIBRARY = {
-    "gaming": [ ... ],   # نفس القائمة السابقة كاملة (انسخها من الكود القديم)
-    "AI": [ ... ],
-    "tech": [ ... ],
+    "gaming": [
+        "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
+        "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg",
+        "https://images.pexels.com/photos/1591060/pexels-photo-1591060.jpeg",
+        "https://images.pexels.com/photos/210745/pexels-photo-210745.jpeg",
+        "https://images.pexels.com/photos/275033/pexels-photo-275033.jpeg",
+        "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg",
+        "https://images.pexels.com/photos/3943746/pexels-photo-3943746.jpeg",
+        "https://images.pexels.com/photos/821738/pexels-photo-821738.jpeg",
+        "https://images.pexels.com/photos/577585/pexels-photo-577585.jpeg",
+        "https://images.pexels.com/photos/1591061/pexels-photo-1591061.jpeg",
+        "https://images.pexels.com/photos/3165336/pexels-photo-3165336.jpeg",
+        "https://images.pexels.com/photos/3943747/pexels-photo-3943747.jpeg"
+    ],
+    "AI": [
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
+        "https://images.pexels.com/photos/256381/pexels-photo-256381.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
+        "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
+        "https://images.pexels.com/photos/5380797/pexels-photo-5380797.jpeg",
+        "https://images.pexels.com/photos/2058120/pexels-photo-2058120.jpeg",
+        "https://images.pexels.com/photos/8386438/pexels-photo-8386438.jpeg",
+        "https://images.pexels.com/photos/3861973/pexels-photo-3861973.jpeg",
+        "https://images.pexels.com/photos/256380/pexels-photo-256380.jpeg",
+        "https://images.pexels.com/photos/1181243/pexels-photo-1181243.jpeg",
+        "https://images.pexels.com/photos/5380798/pexels-photo-5380798.jpeg"
+    ],
+    "tech": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/459653/pexels-photo-459653.jpeg",
+        "https://images.pexels.com/photos/2588753/pexels-photo-2588753.jpeg",
+        "https://images.pexels.com/photos/3861971/pexels-photo-3861971.jpeg",
+        "https://images.pexels.com/photos/2058121/pexels-photo-2058121.jpeg",
+        "https://images.pexels.com/photos/1181245/pexels-photo-1181245.jpeg",
+        "https://images.pexels.com/photos/3165337/pexels-photo-3165337.jpeg",
+        "https://images.pexels.com/photos/459654/pexels-photo-459654.jpeg",
+        "https://images.pexels.com/photos/2588754/pexels-photo-2588754.jpeg"
+    ],
     "science": [
         "https://images.pexels.com/photos/247431/pexels-photo-247431.jpeg",
         "https://images.pexels.com/photos/326709/pexels-photo-326709.jpeg",
@@ -80,8 +118,13 @@ IMAGE_LIBRARY = {
         "https://images.pexels.com/photos/417173/pexels-photo-417173.jpeg",
         "https://images.pexels.com/photos/572897/pexels-photo-572897.jpeg"
     ],
-    "default": [ ... ]
-}  # (انسخ القوائم كاملة من الكود السابق)
+    "default": [
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg"
+    ]
+}
 
 # =========================
 # تحديد الموضوع
@@ -153,26 +196,27 @@ def validate_image():
         return False
 
 # =========================
-# 🔍 بحث تلقائي عن صورة مناسبة في Pexels (بدل Google Images)
+# 🔍 بحث بسيط في Google Images (بدون أي API Key)
 # =========================
-def get_pexels_image(title: str) -> str:
-    query = title.replace(" ", "+").replace(":", "").replace("?", "").replace("!", "")[:80]
-    url = f"https://api.pexels.com/v1/search?query={query}&per_page=3&orientation=landscape"
-    headers = {"Authorization": PEXELS_API_KEY}
-    
+def get_google_image(title: str) -> str:
+    query = title.replace(" ", "+").replace(":", "").replace("?", "").replace("!", "")[:100]
+    url = f"https://www.google.com/search?tbm=isch&q={query}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+    }
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200:
-            data = res.json()
-            photos = data.get("photos", [])
-            if photos:
-                return photos[0]["src"]["large2x"]   # أعلى جودة
+        # استخراج أول صورة مباشرة من نتائج Google
+        matches = re.findall(r'https?://[^"\']+\.(?:jpg|jpeg|png|webp|gif)', res.text, re.IGNORECASE)
+        for m in matches:
+            if len(m) > 40 and "google" not in m.lower() and "logo" not in m.lower():
+                return m
     except Exception as e:
-        print("Pexels API Error:", e)
+        print("Google Images Error:", e)
     return None
 
 # =========================
-# Generate Post (مع هاشتاجات)
+# Generate Post
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
@@ -221,7 +265,7 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Main - الآن يبحث في Pexels أولاً
+# Main
 # =========================
 def main():
     articles = get_news()
@@ -232,7 +276,7 @@ def main():
     article = articles[0]
     print(f"📝 جاري معالجة الخبر: {article['title']} (من {article['source']})")
 
-    # === اختيار الصورة الجديد (ترتيب الأولوية) ===
+    # === اختيار الصورة (ترتيب الأولوية) ===
     image_ok = False
 
     # 1. صورة الخبر الأصلية
@@ -244,18 +288,18 @@ def main():
         else:
             image_ok = False
 
-    # 2. بحث في Pexels (الجديد)
+    # 2. بحث في Google Images (الجديد)
     if not image_ok:
-        print("🔍 جاري البحث التلقائي عن صورة مناسبة في Pexels...")
-        pexels_url = get_pexels_image(article["title"])
-        if pexels_url:
-            image_ok = download_image(pexels_url)
+        print("🔍 جاري البحث التلقائي عن صورة مناسبة في Google Images...")
+        google_url = get_google_image(article["title"])
+        if google_url:
+            image_ok = download_image(google_url)
             if image_ok and validate_image():
-                print("✅ تم العثور على صورة ممتازة من Pexels")
+                print("✅ تم العثور على صورة ممتازة من Google Images")
             else:
                 image_ok = False
 
-    # 3. الصورة الاحتياطية من المكتبة (آخر حل)
+    # 3. الصورة الاحتياطية من المكتبة
     if not image_ok:
         topic = get_topic(article["title"])
         backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
