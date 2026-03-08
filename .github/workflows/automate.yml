@@ -1,36 +1,41 @@
-name: AI Tech News Bot
+name: Tech News Bot
 
-# تشغيل كل 3 ساعات + إمكانية التشغيل يدوياً
 on:
   schedule:
-    - cron: '0 */3 * * *'   # كل 3 ساعات
-  workflow_dispatch:
+    - cron: "0 */3 * * *"   # تشغيل البوت كل 3 ساعات
+  workflow_dispatch:        # تشغيل يدوي
 
 jobs:
-  post-news:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      # 2️⃣ Setup Python
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      # 3️⃣ Install dependencies
-      - name: Install dependencies
-        run: |
-          pip install requests
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
 
-      # 4️⃣ Run AI Tech News Bot
-      - name: Run AI Tech News Bot
-        env:
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-        run: python bot.py
+    - name: Install dependencies
+      run: |
+        pip install requests
+        pip install google-generativeai
+
+    - name: Run bot
+      env:
+        NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+        FACEBOOK_PAGE_ID: ${{ secrets.PAGE_ID }}
+        FACEBOOK_ACCESS_TOKEN: ${{ secrets.PAGE_ACCESS_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python bot.py
+
+    - name: Commit posted news
+      run: |
+        git config --global user.name "bot"
+        git config --global user.email "bot@github.com"
+        git add posted_news.json
+        git commit -m "update posted news" || echo "no changes"
+        git push
