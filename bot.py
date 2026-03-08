@@ -216,10 +216,7 @@ IMAGE_LIBRARY = {
         "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg"
     ]
 }
-    ]
-}
-
-# =========================
+# ========================
 # تحديد الموضوع
 # =========================
 def get_topic(title: str) -> str:
