@@ -345,100 +345,35 @@ def get_google_image(title: str, used_images=None) -> str:
         return None
 
 # =========================
-# توليد المنشور عبر Gemini (نسخة محسّنة مع تحديد صارم للطول)
+# Generate Post (Gemini)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
-    # Prompt محسّن مع تعليمات صارمة حول الطول
     prompt = f"""
-أنت كاتب محتوى تقني محترف ومؤثر على وسائل التواصل الاجتماعي، تستهدف الجمهور المغربي الشاب المهتم بالتكنولوجيا. اكتب منشوراً احترافياً وجذاباً بالدارجة المغربية حول الخبر التالي:
+أنت خبير تقني مغربي محترف ومؤثر.
+اكتب منشور احترافي، جذاب وطويل بالدارجة المغربية الأصيلة لصفحة "تقنية بالدارجة".
 
 الخبر: "{title}"
 
-متطلبات صارمة:
-- **الطول**: يجب أن يكون المنشور بين 1500 و 2000 حرف بالضبط. لا تتجاوز 2000 حرف أبداً.
-- الهيكل:
-  1. مقدمة قوية: جملة أو سؤال يثير الفضول.
-  2. شرح الخبر: بطريقة مبسطة.
-  3. الأهمية والتأثير: لماذا هذا الخبر مهم للمغربي.
-  4. لمسة شخصية: رأيك أو توقعاتك.
-  5. سؤال تفاعلي: في النهاية.
-  6. الإيموجي: 3-5 إيموجيات مناسبة (📱💻🚀🔥).
-  7. الهاشتاجات: سطر منفصل بـ 4-5 هاشتاجات.
+التعليمات الدقيقة:
+- ابدأ مباشرة بجملة قوية تجذب الانتباه.
+- شرح الخبر بطريقة مبسطة ومفصلة.
+- أبرز أهميته وتأثيره على حياتنا.
+- استعمل إيموجي تقنية بذكاء.
+- في النهاية أضف سطر منفصل يحتوي على بالضبط 4-5 هاشتاجات مناسبة.
 
-- اللغة: دارجة مغربية سليمة مع بعض المصطلحات التقنية بالإنجليزية.
-
-اكتب المنشور الآن دون أي مقدمات إضافية.
+الهدف: منشور يولّد تفاعل عالي!
 """
 
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
-    
+
     try:
-        res = requests.post(url, json=data, headers=headers, timeout=30)
+        res = requests.post(url, json=data, headers=headers, timeout٦=30)
         res.raise_for_status()
         res_json = res.json()
-        post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        # إذا تجاوز الحد الأقصى، نطلب إعادة كتابة بشكل أقصر
-        if len(post_text) > MAX_POST_LENGTH:
-            logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، جاري طلب نسخة مختصرة...")
-            
-            retry_prompt = f"""
-المنشور الذي أرسلته سابقاً طويل جداً (تجاوز 2000 حرف). أعد كتابة نفس المنشور ولكن بشكل مختصر جداً، مع الالتزام بالطول التالي: 1500-1800 حرف.
-
-الموضوع: "{title}"
-
-المطلوب:
-- مقدمة سريعة.
-- شرح الخبر في نقطتين.
-- التأثير الرئيسي.
-- سؤال تفاعلي واحد.
-- 3-4 هاشتاجات.
-
-اكتب النسخة المختصرة مباشرة:
-"""
-            data = {"contents": [{"parts": [{"text": retry_prompt}]}]}
-            res = requests.post(url, json=data, headers=headers, timeout=30)
-            res.raise_for_status()
-            res_json = res.json()
-            post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        # إذا لا يزال طويلاً، نقلم بذكاء (نبحث عن آخر جملة كاملة)
-        if len(post_text) > MAX_POST_LENGTH:
-            logger.warning(f"⚠️ لا يزال النص طويلاً ({len(post_text)} حرف)، سيتم تقليمه بذكاء")
-            
-            # نأخذ أول MAX_POST_LENGTH حرف
-            trimmed = post_text[:MAX_POST_LENGTH]
-            # نبحث عن آخر علامة نهاية جملة في النصف الثاني من النص المقتطع
-            # علامات نهاية الجمل: . ! ؟ ... ). ]. " 
-            last_punct = -1
-            for punct in ['.', '!', '؟', '...', ').', '].', '"']:
-                pos = trimmed.rfind(punct)
-                if pos > MAX_POST_LENGTH * 0.7:  # ضمن آخر 30%
-                    last_punct = pos
-                    break
-            
-            if last_punct != -1:
-                post_text = trimmed[:last_punct+1]
-                # نحاول إضافة الهاشتاجات إذا كانت موجودة بعد القطع
-                # نبحث عن # في النص المتبقي
-                hashtag_line = ""
-                lines = post_text.split('\n')
-                for line in reversed(lines):
-                    if '#' in line:
-                        hashtag_line = line
-                        break
-                if hashtag_line:
-                    # إذا وجدنا سطر هاشتاجات، نتركه، وإلا نخلي النص كما هو
-                    pass
-            else:
-                # إذا لم نجد علامة، نأخذ النص كما هو (أفضل من لا شيء)
-                post_text = trimmed
-        
-        return post_text
-        
+        return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         logger.error(f"❌ Gemini Error: {e}")
         return None
