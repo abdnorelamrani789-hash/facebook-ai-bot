@@ -55,6 +55,8 @@ def get_news():
                 image = None
                 if "media_content" in entry:
                     image = entry.media_content[0]["url"]
+                elif "media_thumbnail" in entry:
+                    image = entry.media_thumbnail[0]["url"]
                 return {
                     "title": title,
                     "desc": desc,
@@ -86,12 +88,12 @@ def generate_post(article):
 {article['desc']}
 """
 
-    response = client.models.generate_content(
-        model="gemini-1.5-flash",
-        contents=prompt
+    response = client.responses.create(
+        model="gemini-1.5",
+        input=prompt
     )
 
-    return response.text.strip()
+    return response.output_text.strip()
 
 # =========================
 # نشر في فايسبوك
@@ -120,6 +122,8 @@ def run():
 
     # استخدم صورة الخبر الأصلية
     image_url = article["image"]
+    if not image_url:
+        image_url = "https://via.placeholder.com/1200x630.png?text=Tech+News"  # fallback
 
     print("Posting to Facebook...")
     post_to_facebook(post_text, image_url)
