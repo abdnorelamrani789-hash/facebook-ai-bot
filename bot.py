@@ -10,7 +10,6 @@ import feedparser
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-NEWS_RSS = os.getenv("NEWS_RSS", "https://www.theverge.com/rss/index.xml")
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
     raise Exception("Missing required environment variables")
@@ -28,16 +27,20 @@ else:
     posted_news = {}
 
 # =========================
-# Image Library (backup images by topic)
+# Backup Images Library
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
         "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
         "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg"
     ],
-    "tech": [
+    "AI": [
         "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
-        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg"
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg"
+    ],
+    "tech": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
     ],
     "default": [
         "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
@@ -45,20 +48,37 @@ IMAGE_LIBRARY = {
 }
 
 # =========================
+# Fetch news from RSS
+# =========================
+NEWS_RSS = "https://www.theverge.com/rss/index.xml"  # يمكن تغييره لأي مصدر مفتوح
+
+def get_news():
+    feed = feedparser.parse(NEWS_RSS)
+    for entry in feed.entries:
+        link = entry.link
+        if link in posted_news:
+            continue
+        # جلب صورة الخبر إذا موجودة
+        image = ""
+        media = entry.get("media_content", [])
+        if media:
+            image = media[0].get("url", "")
+        return {"title": entry.title, "link": link, "image": image}
+    return None
+
+# =========================
 # Download Image
 # =========================
 def download_image(url):
     try:
         res = requests.get(url, timeout=30)
-        if res.status_code == 200 and "image" in res.headers.get("Content-Type", "") and len(res.content) > 1000:
+        if res.status_code == 200 and "image" in res.headers.get("Content-Type", ""):
             with open(TEMP_IMAGE, "wb") as f:
                 f.write(res.content)
             return True
-        else:
-            raise Exception("Invalid image response")
     except Exception as e:
         print("Image download failed:", e)
-        return False
+    return False
 
 # =========================
 # Validate Image
@@ -67,43 +87,21 @@ def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
             header = f.read(4)
-        if header[:3] == b"\xff\xd8\xff":  # JPEG
-            return True
-        print("Invalid JPEG header")
-        return False
+        return header[:3] == b"\xff\xd8\xff"  # JPEG check
     except:
         return False
 
 # =========================
-# Fetch News
-# =========================
-def get_news():
-    feed = feedparser.parse(NEWS_RSS)
-    for entry in feed.entries:
-        link = entry.get("link")
-        if link and link not in posted_news:
-            media = entry.get("media_content", [])
-            image_url = ""
-            if isinstance(media, list) and len(media) > 0:
-                image_url = media[0].get("url", "")
-            return {"title": entry.get("title", ""), "link": link, "image": image_url}
-    return None
-
-# =========================
-# Gemini Content Generation
+# Generate Post using Gemini
 # =========================
 def generate_post(title):
-    model = "models/gemini-3-flash-preview"
-    url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
-
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
     prompt = f"""
 أنت خبير في التقنية. عندك خبر: "{title}".
-
 اكتب منشور احترافي وطويل بالدارجة المغربية لصفحة "تقنية بالدارجة"، بدون مقدمة زايدة.
-اشرح الخبر بطريقة مفهومة وبسيطة، استعمل إيموجي تقنية.
-في النهاية، ضيف سؤال لتحفيز التفاعل.
+اشرح الخبر بطريقة مبسطة وفهمها للناس، استعمل إيموجي تقنية.
+في النهاية ضيف سؤال لتحفيز التفاعل.
 """
-
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
@@ -123,9 +121,6 @@ def generate_post(title):
 # Post to Facebook
 # =========================
 def post_to_facebook(message):
-    if not os.path.exists(TEMP_IMAGE):
-        print("No image to post, aborting...")
-        return None
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
         with open(TEMP_IMAGE, "rb") as img_file:
@@ -138,17 +133,6 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Get backup image for topic
-# =========================
-def get_backup_image(title):
-    title_lower = title.lower()
-    if "playstation" in title_lower or "gaming" in title_lower:
-        topic = "gaming"
-    else:
-        topic = "tech"
-    return random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-
-# =========================
 # Main
 # =========================
 def main():
@@ -159,20 +143,22 @@ def main():
 
     print(f"Generating post for: {article['title']}")
 
-    image_downloaded = False
+    # تنزيل الصورة الأصلية إذا صالحة
+    image_ok = False
     if article.get("image"):
-        image_downloaded = download_image(article["image"])
-        if image_downloaded and not validate_image():
-            image_downloaded = False
+        image_ok = download_image(article["image"])
+        if image_ok and not validate_image():
+            image_ok = False
 
-    # إذا فشل تحميل صورة الخبر الأصلي، استعمل صورة احتياطية
-    if not image_downloaded:
-        backup_url = get_backup_image(article["title"])
-        print(f"Using backup image: {backup_url}")
-        image_downloaded = download_image(backup_url)
-        if image_downloaded and not validate_image():
-            print("Backup image invalid")
-            image_downloaded = False
+    # إذا ما كانتش صالحة، استعمل صورة احتياطية حسب الموضوع
+    if not image_ok:
+        topic = "gaming"  # يمكن تحسينه حسب الخبر
+        backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
+        print(f"Using backup image: {backup_image}")
+        image_ok = download_image(backup_image)
+        if not image_ok:
+            print("No image to post, aborting...")
+            return
 
     # توليد النص
     post_text = generate_post(article["title"])
@@ -185,7 +171,7 @@ def main():
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # تسجيل الخبر كمنشور
+    # حفظ الخبر لتجنب التكرار
     posted_news[article["link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
