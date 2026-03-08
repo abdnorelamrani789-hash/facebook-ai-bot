@@ -4,6 +4,7 @@ import random
 import json
 import feedparser
 import re
+from urllib.parse import urlparse, urlunparse
 
 # =========================
 # Environment Variables
@@ -19,24 +20,31 @@ TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 
 # =========================
-# Load posted news (محصن)
+# تطبيع الروابط + تحميل posted_news
 # =========================
+def normalize_link(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    clean = urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', '')).rstrip('/')
+    return clean
+
 if os.path.exists(POSTED_FILE):
     try:
         with open(POSTED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, list):
-            posted_news = {link: True for link in data if isinstance(link, str)}
+            posted_news = {normalize_link(link): True for link in data if isinstance(link, str)}
             print("✅ تم تحويل الملف القديم من list إلى dict")
         else:
-            posted_news = data
+            posted_news = {normalize_link(k): v for k, v in data.items()}
     except:
         posted_news = {}
 else:
     posted_news = {}
 
 # =========================
-# مصادر الأخبار (7 مصادر قوية)
+# مصادر الأخبار (7 مصادر)
 # =========================
 NEWS_SOURCES = [
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
@@ -49,7 +57,7 @@ NEWS_SOURCES = [
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (كثيرة جدًا - 12 لكل فئة)
+# مكتبة الصور الاحتياطية (48 صورة عالية الجودة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
@@ -103,7 +111,7 @@ IMAGE_LIBRARY = {
 }
 
 # =========================
-# تحديد الموضوع تلقائيًا
+# تحديد الموضوع
 # =========================
 def get_topic(title: str) -> str:
     lower = title.lower()
@@ -116,33 +124,40 @@ def get_topic(title: str) -> str:
     return "default"
 
 # =========================
-# جلب خبر جديد من أي مصدر
+# جلب حتى 3 أخبار جديدة
 # =========================
 def get_news():
+    new_articles = []
     for source in NEWS_SOURCES:
         print(f"🔍 جاري البحث في: {source['name']}")
         feed = feedparser.parse(source["url"])
         for entry in feed.entries:
-            link = entry.link
-            if link in posted_news:
+            raw_link = entry.link
+            norm_link = normalize_link(raw_link)
+            if norm_link in posted_news:
                 continue
                 
-            # استخراج الصورة من الخبر
             content = entry.get('content', [{}])[0].get('value', '') or entry.get('summary', '')
             image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
             image = image_match.group(1) if image_match else ""
             
-            print(f"✅ تم العثور على خبر جديد من {source['name']}")
-            return {
+            new_articles.append({
                 "title": entry.title,
-                "link": link,
+                "link": raw_link,
+                "norm_link": norm_link,
                 "image": image,
                 "source": source["name"]
-            }
-    return None
+            })
+            print(f"✅ تم العثور على خبر جديد من {source['name']}")
+            
+            if len(new_articles) >= 3:
+                break
+        if len(new_articles) >= 3:
+            break
+    return new_articles
 
 # =========================
-# باقي الدوال (نفسها بدون تغيير كبير)
+# Download Image
 # =========================
 def download_image(url):
     try:
@@ -155,6 +170,9 @@ def download_image(url):
         print("Image download failed:", e)
     return False
 
+# =========================
+# Validate Image
+# =========================
 def validate_image():
     try:
         with open(TEMP_IMAGE, "rb") as f:
@@ -163,6 +181,9 @@ def validate_image():
     except:
         return False
 
+# =========================
+# Generate Post using Gemini
+# =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
     prompt = f"""
@@ -185,6 +206,9 @@ def generate_post(title):
         print("Gemini Error:", e)
         return None
 
+# =========================
+# Post to Facebook
+# =========================
 def post_to_facebook(message):
     fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos"
     try:
@@ -198,53 +222,52 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Main
+# Main - نشر متعدد (حتى 3 أخبار)
 # =========================
 def main():
-    article = get_news()
-    if not article:
+    articles = get_news()
+    if not articles:
         print("No new articles to post from any source.")
         return
 
-    print(f"📝 Generating post for: {article['title']} (من {article.get('source', 'غير معروف')})")
+    for idx, article in enumerate(articles, 1):
+        print(f"📝 [{idx}/{len(articles)}] Generating post for: {article['title']} (من {article['source']})")
 
-    # تنزيل الصورة الأصلية
-    image_ok = False
-    if article.get("image"):
-        image_ok = download_image(article["image"])
-        if image_ok and not validate_image():
-            image_ok = False
+        # تنزيل الصورة
+        image_ok = False
+        if article.get("image"):
+            image_ok = download_image(article["image"])
+            if image_ok and not validate_image():
+                image_ok = False
 
-    # صورة احتياطية (من المكتبة الكبيرة)
-    if not image_ok:
-        topic = get_topic(article["title"])
-        backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-        print(f"🖼️ Using backup image for topic '{topic}': {backup_image[:80]}...")
-        image_ok = download_image(backup_image)
         if not image_ok:
-            print("No image to post, aborting...")
-            return
+            topic = get_topic(article["title"])
+            backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
+            print(f"🖼️ Using backup image for '{topic}': {backup_image[:80]}...")
+            image_ok = download_image(backup_image)
+            if not image_ok:
+                print("No image, skipping...")
+                continue
 
-    # توليد ونشر
-    post_text = generate_post(article["title"])
-    if not post_text:
-        print("Failed to generate post text")
-        return
+        post_text = generate_post(article["title"])
+        if not post_text:
+            continue
 
-    print("🚀 Posting to Facebook...")
-    res = post_to_facebook(post_text)
-    print("Facebook response:", res)
+        print("🚀 Posting to Facebook...")
+        res = post_to_facebook(post_text)
+        print("Facebook response:", res)
 
-    # حفظ
-    posted_news[article["link"]] = True
-    with open(POSTED_FILE, "w", encoding="utf-8") as f:
-        json.dump(posted_news, f, ensure_ascii=False, indent=2)
-    print(f"✅ تم حفظ الخبر بنجاح من {article.get('source')}")
+        # حفظ الخبر
+        posted_news[article["norm_link"]] = True
+        with open(POSTED_FILE, "w", encoding="utf-8") as f:
+            json.dump(posted_news, f, ensure_ascii=False, indent=2)
+        print(f"✅ تم حفظ الخبر بنجاح من {article['source']}")
 
-    try:
-        os.remove(TEMP_IMAGE)
-    except:
-        pass
+        # تنظيف
+        try:
+            os.remove(TEMP_IMAGE)
+        except:
+            pass
 
 if __name__ == "__main__":
     main()
