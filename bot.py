@@ -109,6 +109,15 @@ NEWS_SOURCES = [
     {"name": "البوابة التقنية AIT", "url": "https://aitnews.com/feed/"},
     {"name": "تيك 24", "url": "https://tech24.ma/feed/"},
     {"name": "ياسين تك", "url": "https://www.yasintech.com/feed/"},
+{"name": "Tom's Hardware", "url": "https://www.tomshardware.com/feeds/all"},
+{"name": "Android Police", "url": "https://www.androidpolice.com/feed/"},
+{"name": "9to5Mac", "url": "https://9to5mac.com/feed/"},
+{"name": "GSMArena", "url": "https://www.gsmarena.com/rss-news-reviews.php3"},
+{"name": "XDA Developers", "url": "https://www.xda-developers.com/feed/"},
+{"name": "البوابة العربية للأخبار التقنية", "url": "https://aitnews.com/feed/"},
+{"name": "سعودي شات", "url": "https://www.saudishat.com/feed"},
+{"name": "مجلة تقنية", "url": "https://www.magtechnia.com/feed/"},
+{"name": "عالم التقنية", "url": "https://www.tech-wd.com/wd/feed"}
 ]
 
 # =========================
