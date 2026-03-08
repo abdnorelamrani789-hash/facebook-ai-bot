@@ -35,7 +35,6 @@ if os.path.exists(POSTED_FILE):
             data = json.load(f)
         if isinstance(data, list):
             posted_news = {normalize_link(link): True for link in data if isinstance(link, str)}
-            print("✅ تم تحويل الملف القديم من list إلى dict")
         else:
             posted_news = {normalize_link(k): v for k, v in data.items()}
     except:
@@ -44,9 +43,10 @@ else:
     posted_news = {}
 
 # =========================
-# مصادر الأخبار (7 مصادر)
+# مصادر الأخبار (إنجليزية + عربية)
 # =========================
 NEWS_SOURCES = [
+    # مصادر إنجليزية
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
     {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
     {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
@@ -54,10 +54,16 @@ NEWS_SOURCES = [
     {"name": "Engadget", "url": "https://www.engadget.com/rss.xml"},
     {"name": "Android Authority", "url": "https://www.androidauthority.com/feed/"},
     {"name": "CNET", "url": "https://www.cnet.com/rss/"},
+    
+    # مصادر عربية
+    {"name": "عرب هاردوير", "url": "https://www.arabhardware.net/feed"},
+    {"name": "البوابة التقنية AIT", "url": "https://aitnews.com/feed/"},
+    {"name": "تيك 24", "url": "https://tech24.ma/feed/"},
+    {"name": "ياسين تك", "url": "https://www.yasintech.com/feed/"},
 ]
 
 # =========================
-# مكتبة الصور الاحتياطية (48 صورة عالية الجودة)
+# مكتبة الصور الاحتياطية (48 صورة عالية الجودة - كاملة)
 # =========================
 IMAGE_LIBRARY = {
     "gaming": [
@@ -124,16 +130,18 @@ def get_topic(title: str) -> str:
     return "default"
 
 # =========================
-# جلب حتى 3 أخبار جديدة
+# جلب خبر واحد فقط من مصدر عشوائي
 # =========================
 def get_news():
-    new_articles = []
-    for source in NEWS_SOURCES:
+    sources = NEWS_SOURCES.copy()
+    random.shuffle(sources)
+    
+    for source in sources:
         print(f"🔍 جاري البحث في: {source['name']}")
         feed = feedparser.parse(source["url"])
+        
         for entry in feed.entries:
-            raw_link = entry.link
-            norm_link = normalize_link(raw_link)
+            norm_link = normalize_link(entry.link)
             if norm_link in posted_news:
                 continue
                 
@@ -141,20 +149,17 @@ def get_news():
             image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
             image = image_match.group(1) if image_match else ""
             
-            new_articles.append({
+            print(f"✅ تم العثور على خبر جديد من {source['name']}")
+            return [{
                 "title": entry.title,
-                "link": raw_link,
+                "link": entry.link,
                 "norm_link": norm_link,
                 "image": image,
                 "source": source["name"]
-            })
-            print(f"✅ تم العثور على خبر جديد من {source['name']}")
-            
-            if len(new_articles) >= 3:
-                break
-        if len(new_articles) >= 3:
-            break
-    return new_articles
+            }]
+    
+    print("❌ لم يتم العثور على أي خبر جديد")
+    return []
 
 # =========================
 # Download Image
@@ -166,8 +171,8 @@ def download_image(url):
             with open(TEMP_IMAGE, "wb") as f:
                 f.write(res.content)
             return True
-    except Exception as e:
-        print("Image download failed:", e)
+    except:
+        pass
     return False
 
 # =========================
@@ -182,25 +187,35 @@ def validate_image():
         return False
 
 # =========================
-# Generate Post using Gemini
+# Generate Post - برومبت محترف لزيادة التفاعل
 # =========================
 def generate_post(title):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    
     prompt = f"""
-أنت خبير في التقنية. عندك خبر: "{title}".
-اكتب منشور احترافي وطويل بالدارجة المغربية لصفحة "تقنية بالدارجة"، بدون مقدمة زايدة.
-اشرح الخبر بطريقة مبسطة وفهمها للناس، استعمل إيموجي تقنية.
-في النهاية ضيف سؤال لتحفيز التفاعل.
+أنت خبير تقني مغربي محترف ومؤثر على فيسبوك.
+اكتب منشور احترافي، جذاب وطويل بالدارجة المغربية الأصيلة لصفحة "تقنية بالدارجة".
+
+الخبر: "{title}"
+
+التعليمات الدقيقة:
+- ابدأ مباشرة بجملة قوية تجذب الانتباه (بدون أي مقدمة زائدة).
+- شرح الخبر بطريقة مبسطة ومفصلة تجعل أي واحد عادي يفهم.
+- أبرز أهمية الخبر وتأثيره على حياتنا اليومية.
+- استعمل إيموجي تقنية بذكاء واعتدال.
+- خلي اللغة حماسية وطبيعية كأنك تكتب لصحابك.
+- في النهاية ضع سؤال تفاعلي قوي ومفتوح يحفز على التعليق والمشاركة (مثل: شنو رأيكم؟ هل جربتوها؟ واش غادي تشتريو؟ هل بغيتو تفاصيل أكثر؟...).
+
+الهدف: المنشور يولد تفاعل عالي جداً!
 """
+
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
         res = requests.post(url, json=data, headers=headers, timeout=30)
+        res.raise_for_status()
         res_json = res.json()
-        if "candidates" not in res_json:
-            print("Gemini API error:", res_json)
-            return None
         return res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print("Gemini Error:", e)
@@ -222,52 +237,52 @@ def post_to_facebook(message):
         return None
 
 # =========================
-# Main - نشر متعدد (حتى 3 أخبار)
+# Main - خبر واحد فقط
 # =========================
 def main():
     articles = get_news()
     if not articles:
-        print("No new articles to post from any source.")
+        print("No new articles to post.")
         return
 
-    for idx, article in enumerate(articles, 1):
-        print(f"📝 [{idx}/{len(articles)}] Generating post for: {article['title']} (من {article['source']})")
+    article = articles[0]
+    print(f"📝 جاري معالجة الخبر: {article['title']} (من {article['source']})")
 
-        # تنزيل الصورة
-        image_ok = False
-        if article.get("image"):
-            image_ok = download_image(article["image"])
-            if image_ok and not validate_image():
-                image_ok = False
+    # تنزيل الصورة
+    image_ok = False
+    if article.get("image"):
+        image_ok = download_image(article["image"])
+        if image_ok and not validate_image():
+            image_ok = False
 
+    if not image_ok:
+        topic = get_topic(article["title"])
+        backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
+        print(f"🖼️ Using backup image for '{topic}'")
+        image_ok = download_image(backup_image)
         if not image_ok:
-            topic = get_topic(article["title"])
-            backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-            print(f"🖼️ Using backup image for '{topic}': {backup_image[:80]}...")
-            image_ok = download_image(backup_image)
-            if not image_ok:
-                print("No image, skipping...")
-                continue
+            print("No image, skipping...")
+            return
 
-        post_text = generate_post(article["title"])
-        if not post_text:
-            continue
+    post_text = generate_post(article["title"])
+    if not post_text:
+        return
 
-        print("🚀 Posting to Facebook...")
-        res = post_to_facebook(post_text)
-        print("Facebook response:", res)
+    print("🚀 Posting to Facebook...")
+    res = post_to_facebook(post_text)
+    print("Facebook response:", res)
 
-        # حفظ الخبر
-        posted_news[article["norm_link"]] = True
-        with open(POSTED_FILE, "w", encoding="utf-8") as f:
-            json.dump(posted_news, f, ensure_ascii=False, indent=2)
-        print(f"✅ تم حفظ الخبر بنجاح من {article['source']}")
+    # حفظ الخبر
+    posted_news[article["norm_link"]] = True
+    with open(POSTED_FILE, "w", encoding="utf-8") as f:
+        json.dump(posted_news, f, ensure_ascii=False, indent=2)
+    print(f"✅ تم النشر والحفظ بنجاح من {article['source']}")
 
-        # تنظيف
-        try:
-            os.remove(TEMP_IMAGE)
-        except:
-            pass
+    # تنظيف
+    try:
+        os.remove(TEMP_IMAGE)
+    except:
+        pass
 
 if __name__ == "__main__":
     main()
