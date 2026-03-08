@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import time
 
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
@@ -9,6 +10,8 @@ NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
 TEMP_IMAGE = "ai_news.jpg"
 POSTED_FILE = "posted_news.json"
+
+PLACEHOLDER_IMAGE_URL = "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
 
 # =========================
 # Load/Save posted news
@@ -46,12 +49,13 @@ def get_trending_news():
             return {
                 "title": article["title"],
                 "description": article["description"] or "",
-                "url": article["url"]
+                "url": article["url"],
+                "image": article.get("urlToImage")
             }
     return None
 
 # =========================
-# Gemini generate content + image
+# Gemini generate content + image prompt
 # =========================
 def generate_content_and_image(article):
     model = "models/gemini-3-flash-preview"
@@ -66,7 +70,7 @@ def generate_content_and_image(article):
 3. أضف 3-4 إيموجي تقنية مناسبة.
 4. أضف سؤال في النهاية لتحفيز التفاعل.
 5. أضف Hashtags مناسبة في آخر المنشور.
-6. اجعل النص + توليد الصورة احترافية.
+6. أعطيني وصف IMAGE_PROMPT باللغة الإنجليزية لتوليد صورة AI.
 
 العنوان: {article['title']}
 الوصف: {article['description']}
@@ -80,7 +84,7 @@ def generate_content_and_image(article):
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        r = requests.post(url, headers=headers, json=data, timeout=30)
+        r = requests.post(url, headers=headers, json=data, timeout=60)
         res = r.json()
         full_text = res["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -100,12 +104,25 @@ def generate_ai_image(prompt):
     try:
         image_url = "https://image.pollinations.ai/prompt/"
         final_url = image_url + prompt.replace(" ", "%20")
-        img = requests.get(final_url, timeout=20)
+        img = requests.get(final_url, timeout=60)
         with open(TEMP_IMAGE, "wb") as f:
             f.write(img.content)
         return True
     except Exception as e:
         print("AI Image generation failed:", e)
+        return False
+
+# =========================
+# Download image from URL
+# =========================
+def download_image(url):
+    try:
+        img = requests.get(url, timeout=30)
+        with open(TEMP_IMAGE, "wb") as f:
+            f.write(img.content)
+        return True
+    except Exception as e:
+        print("Image download failed:", e)
         return False
 
 # =========================
@@ -139,15 +156,21 @@ def main():
     content, img_prompt = generate_content_and_image(article)
 
     print("Generating AI image...")
-    if not generate_ai_image(img_prompt):
-        print("Failed to generate AI image, fallback to placeholder")
-        # ممكن نضع صورة افتراضية هنا
+    ai_success = generate_ai_image(img_prompt)
+
+    if not ai_success:
+        print("AI image generation failed, using original article image...")
+        if article.get("image") and download_image(article["image"]):
+            print("Downloaded original article image.")
+        else:
+            print("Downloading placeholder image...")
+            download_image(PLACEHOLDER_IMAGE_URL)
 
     print("Posting to Facebook...")
     result = post_to_facebook(content)
     print("Facebook response:", result)
 
-    # حفظ الخبر لتجنب التكرار
+    # Save posted news
     posted = load_posted_news()
     posted.append(article["url"])
     save_posted_news(posted)
