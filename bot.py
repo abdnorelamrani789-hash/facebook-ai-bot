@@ -1,38 +1,40 @@
-import requests
-import json
 import os
+import json
+import requests
 import feedparser
-import google.generativeai as genai
+from google import genai
 
+# =========================
+# إعداد مفاتيح البيئة
+# =========================
 FACEBOOK_PAGE_ID = os.getenv("PAGE_ID")
 FACEBOOK_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
+# إنشاء العميل
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 POSTED_FILE = "posted_news.json"
 
-
+# =========================
 # تحميل الأخبار المنشورة
+# =========================
 def load_posted():
     if os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "r") as f:
             return json.load(f)
     return []
 
-
-# حفظ خبر منشور
 def save_posted(url):
     posted = load_posted()
     posted.append(url)
-
     with open(POSTED_FILE, "w") as f:
         json.dump(posted, f)
 
-
+# =========================
 # جلب الأخبار من RSS
+# =========================
 def get_news():
-
     feeds = [
         "https://www.theverge.com/rss/index.xml",
         "https://techcrunch.com/feed/",
@@ -44,99 +46,86 @@ def get_news():
     posted = load_posted()
 
     for feed_url in feeds:
-
         feed = feedparser.parse(feed_url)
-
         for entry in feed.entries:
-
             link = entry.link
-
             if link not in posted:
-
                 title = entry.title
                 desc = entry.summary if "summary" in entry else ""
-
                 image = None
                 if "media_content" in entry:
                     image = entry.media_content[0]["url"]
-
                 return {
                     "title": title,
                     "desc": desc,
                     "url": link,
                     "image": image
                 }
-
     return None
 
-
+# =========================
 # توليد منشور احترافي
+# =========================
 def generate_post(article):
-
-    model = genai.GenerativeModel("gemini-pro")
-
     prompt = f"""
 اكتب منشور فايسبوك احترافي بالدارجة المغربية حول خبر تقني.
 
 القواعد:
-- بدون مقدمة
+- بدون أي مقدمة أو زيادات
 - لا تكرر العنوان
-- شرح بسيط وواضح
-- 4 إلى 6 أسطر
-- استعمل ايموجي
-- أضف سؤال للنقاش
-- أضف هاشتاغات تقنية
+- شرح الخبر بطريقة بسيطة وواضحة
+- طول المنشور بين 4 و6 أسطر
+- استعمل 3 إيموجي تقنية
+- أضف سؤال في النهاية لتحفيز النقاش
+- أضف هاشتاغات تقنية مناسبة
 
 العنوان:
 {article['title']}
 
 الوصف:
 {article['desc']}
-
-اكتب المنشور فقط.
 """
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=prompt
+    )
 
     return response.text.strip()
 
-
-# النشر في فايسبوك
+# =========================
+# نشر في فايسبوك
+# =========================
 def post_to_facebook(message, image_url):
-
     url = f"https://graph.facebook.com/{FACEBOOK_PAGE_ID}/photos"
-
     payload = {
         "url": image_url,
         "caption": message,
         "access_token": FACEBOOK_ACCESS_TOKEN
     }
-
     r = requests.post(url, data=payload)
-
     print("Facebook response:", r.json())
 
-
+# =========================
 # تشغيل البوت
+# =========================
 def run():
-
     article = get_news()
-
     if not article:
-        print("No new news")
+        print("No new news found")
         return
 
     print("Generating post...")
-
     post_text = generate_post(article)
 
+    # استخدم صورة الخبر الأصلية
     image_url = article["image"]
 
     print("Posting to Facebook...")
-
     post_to_facebook(post_text, image_url)
 
     save_posted(article["url"])
+    print("Done! News posted and saved.")
 
-
-run()
+if __name__ == "__main__":
+    run()
