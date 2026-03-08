@@ -18,16 +18,65 @@ TEMP_IMAGE = "temp_image.jpg"
 POSTED_FILE = "posted_news.json"
 
 # =========================
+# Image Library (احتياطية حسب الموضوع)
+# =========================
+IMAGE_LIBRARY = {
+    "cybersecurity": [
+        "https://images.pexels.com/photos/547429/pexels-photo-547429.jpeg",
+        "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg",
+        "https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg"
+    ],
+    "programming": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
+    ],
+    "ai": [
+        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
+        "https://images.pexels.com/photos/1181260/pexels-photo-1181260.jpeg",
+        "https://images.pexels.com/photos/1181677/pexels-photo-1181677.jpeg"
+    ],
+    "gaming": [
+        "https://images.pexels.com/photos/442576/pexels-photo-442576.jpeg",
+        "https://images.pexels.com/photos/442579/pexels-photo-442579.jpeg",
+        "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg"
+    ],
+    "gadgets": [
+        "https://images.pexels.com/photos/607812/pexels-photo-607812.jpeg",
+        "https://images.pexels.com/photos/442590/pexels-photo-442590.jpeg",
+        "https://images.pexels.com/photos/442591/pexels-photo-442591.jpeg"
+    ],
+    "default": [
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg"
+    ]
+}
+
+# =========================
 # Load posted news
 # =========================
 if os.path.exists(POSTED_FILE):
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
         posted_news = json.load(f)
-        # force dict if file contains a list
-        if isinstance(posted_news, list):
-            posted_news = {}
 else:
     posted_news = {}
+
+# =========================
+# Categorize news for backup image selection
+# =========================
+def categorize_article(title):
+    title_lower = title.lower()
+    if any(word in title_lower for word in ["ai", "artificial intelligence", "machine learning", "chatgpt"]):
+        return "ai"
+    elif any(word in title_lower for word in ["security", "hacker", "cyber", "ransomware"]):
+        return "cybersecurity"
+    elif any(word in title_lower for word in ["code", "programming", "python", "javascript", "developer"]):
+        return "programming"
+    elif any(word in title_lower for word in ["playstation", "xbox", "nintendo", "game", "gaming"]):
+        return "gaming"
+    elif any(word in title_lower for word in ["gadget", "device", "phone", "laptop", "hardware"]):
+        return "gadgets"
+    else:
+        return "default"
 
 # =========================
 # Download Image
@@ -62,7 +111,7 @@ def validate_image():
 # =========================
 # Gemini Content Generation
 # =========================
-def generate_post(article_title, article_url, article_image):
+def generate_post(article_title):
     model = "models/gemini-3-flash-preview"
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
 
@@ -83,7 +132,6 @@ def generate_post(article_title, article_url, article_image):
         if "candidates" not in res_json:
             print("Gemini API error:", res_json)
             return None
-
         text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
         return text
     except Exception as e:
@@ -108,19 +156,14 @@ def post_to_facebook(message):
 # =========================
 # Fetch News (RSS example)
 # =========================
-NEWS_RSS = "https://www.theverge.com/rss/index.xml"  # يمكن تغييره لأي مصدر مفتوح
+NEWS_RSS = "https://www.theverge.com/rss/index.xml"
 
 def get_news():
     feed = feedparser.parse(NEWS_RSS)
     for entry in feed.entries:
         if entry.link not in posted_news:
-            # حاول الحصول على صورة إذا كانت موجودة
             image_url = entry.get("media_content", [{}])[0].get("url", "")
-            return {
-                "title": entry.title,
-                "link": entry.link,
-                "image": image_url
-            }
+            return {"title": entry.title, "link": entry.link, "image": image_url}
     return None
 
 # =========================
@@ -141,23 +184,25 @@ def main():
         if image_downloaded and not validate_image():
             image_downloaded = False
 
+    # إذا فشلت صورة الخبر الأصلي، نختار صورة احتياطية حسب التصنيف
+    if not image_downloaded:
+        topic = categorize_article(article["title"])
+        backup_image = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
+        print(f"Using backup image for topic '{topic}': {backup_image}")
+        download_image(backup_image)
+
     # توليد النص
-    post_text = generate_post(article["title"], article["link"], article.get("image"))
+    post_text = generate_post(article["title"])
     if not post_text:
         print("Failed to generate post text")
         return
-
-    # تنزيل صورة placeholder إذا Gemini عطاش صورة خاصة أو صورة الخبر فشلت
-    if not image_downloaded:
-        print("Using placeholder image...")
-        download_image("https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg")
 
     # نشر على فيسبوك
     print("Posting to Facebook...")
     res = post_to_facebook(post_text)
     print("Facebook response:", res)
 
-    # تسجيل الخبر كمنشور لتجنب التكرار
+    # تسجيل الخبر كمنشور
     posted_news[article["link"]] = True
     with open(POSTED_FILE, "w", encoding="utf-8") as f:
         json.dump(posted_news, f, ensure_ascii=False, indent=2)
