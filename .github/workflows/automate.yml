@@ -2,9 +2,8 @@ name: Tech News Bot
 
 on:
   schedule:
-    # تشغيل كل 3 ساعات (0:00, 3:00, 6:00, ... حسب UTC)
-    - cron: '0 */3 * * *'
-  workflow_dispatch:  # للسماح بالتشغيل اليدوي
+    - cron: '30 7,17 * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -14,7 +13,7 @@ jobs:
       - name: استنساخ المستودع باستخدام PAT token
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT_TOKEN }}  # استخدم التوكن الشخصي (ضروري للكتابة)
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: إعداد Python
         uses: actions/setup-python@v5
@@ -33,7 +32,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
 
-      # (اختياري) عرض محتوى ملفات الحالة بعد التشغيل للتحقق
       - name: عرض ملفات الحالة
         run: |
           echo "📄 posted_news.json:"
