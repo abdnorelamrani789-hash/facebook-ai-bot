@@ -346,78 +346,63 @@ def get_google_image(title: str, used_images=None) -> str:
         return None
 
 # =========================
-# توليد المنشور عبر Gemini (نسخة احترافية محسّنة)
+# توليد المنشور عبر Gemini (نسخة سريعة مع تجنب الإلغاء)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
-    # Prompt محسّن ومفصل جداً لضمان الجودة
     prompt = f"""
 أنت كاتب محتوى تقني محترف ومؤثر على وسائل التواصل الاجتماعي، تكتب بصفحة "تقنية بالدارجة" التي تستهدف الجمهور المغربي الشاب المهتم بالتكنولوجيا.
 
-اكتب منشوراً احترافياً وجذاباً بالدارجة المغربية حول الخبر التالي، مع الالتزام الدقيق بالتعليمات أدناه:
+اكتب منشوراً احترافياً وجذاباً بالدارجة المغربية حول الخبر التالي:
 
 الخبر: "{title}"
 
-### **متطلبات صارمة للمنشور:**
+### **تعليمات دقيقة:**
 
-1. **اللغة والإملاء:**
-   - استخدم دارجة مغربية سليمة وخالية من الأخطاء الإملائية والنحوية.
-   - تجنب الترجمة الحرفية من العربية الفصحى أو الإنجليزية.
-   - استخدم مصطلحات تقنية بالإنجليزية عند الضرورة (مثل iPhone, AI, update) ولكن ضمن سياق مفهوم.
+1. **اللغة:** دارجة مغربية سليمة خالية من الأخطاء.
+2. **الهيكل:** 
+   - مقدمة قوية (سؤال أو جملة تشويقية).
+   - شرح الخبر في نقطتين مع عناوين فرعية (🔹).
+   - تأثير الخبر على المستخدم المغربي.
+   - رأي شخصي مختصر.
+   - سؤال تفاعلي في النهاية.
+   - سطر هاشتاجات (4-5).
+3. **الإيموجي:** استخدم 4-6 إيموجيات مناسبة (📱💻🚀🔥📊🔋📸) موزعة بشكل طبيعي.
+4. **الطول:** 1600-2000 حرف.
 
-2. **الهيكل والتنسيق:**
-   - **مقدمة قوية**: ابدأ بجملة أو سؤال يثير الفضول ويجذب القارئ (مثلاً "شنو الجديد فـ عالم التقنية هاد الأسبوع؟").
-   - **شرح الخبر**: قسّم الشرح إلى نقطتين أو ثلاث نقاط واضحة، مع استخدام **عناوين فرعية صغيرة** (مثلاً "🔹 النقطة الأولى:").
-   - **التأثير الرئيسي**: اشرح لماذا هذا الخبر مهم للمغربي العادي وكيف سيؤثر على حياته أو على السوق المغربي.
-   - **لمسة شخصية**: أضف رأيك أو توقعاتك بطريقة ودية وقريبة من القلب.
-   - **سؤال تفاعلي**: في النهاية، اطرح سؤالاً مفتوحاً يحفز المتابعين على التعليق (مثل "واش كنتم تابعين هاد الخبر؟ شاركونا رأيكم!").
-   - **الهاشتاجات**: أضف سطراً منفصلاً يحتوي على 4-5 هاشتاجات مناسبة (بالدارجة أو بالإنجليزية) مثل #تكنولوجيا_المغرب #أخبار_تقنية.
-
-3. **الإيموجي:**
-   - استخدم 4-6 إيموجيات مناسبة وموزعة بشكل طبيعي في النص (📱💻🚀🔥📊🔋📸 وغيرها).
-   - لا تفرط في الاستخدام، وضعها في أماكن استراتيجية (بجانب العناوين، في نهاية الجمل المهمة، بجانب السؤال التفاعلي).
-   - لا تستبدل الإيموجي برموز أخرى مثل النجوم (*) أو الشرطات.
-
-4. **الطول:**
-   - اجعل المنشور بين 1600 و 2000 حرف (بحيث يكون كافياً وجذاباً دون إطالة).
-
-5. **الجودة العامة:**
-   - تأكد من أن النص يبدو وكأنه كتبه إنسان محترف، وليس روبوت.
-   - تجنب التكرار والحشو.
-   - اجعل الأسلوب شيقاً وسلساً.
-
-**الآن اكتب المنشور مباشرة دون أي مقدمات إضافية.**
+اكتب المنشور مباشرة:
 """
 
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    max_retries = 3
-    retry_delay = 60
+    max_retries = 2
+    retry_delay = 30  # ثانية
     
     for attempt in range(max_retries):
         try:
+            logger.info(f"📡 محاولة توليد المنشور رقم {attempt+1}/{max_retries}...")
             res = requests.post(url, json=data, headers=headers, timeout=60)
             
             if res.status_code == 429:
                 logger.warning(f"⚠️ Gemini API: Too Many Requests (429). المحاولة {attempt+1}/{max_retries}. الانتظار {retry_delay} ثانية...")
                 time.sleep(retry_delay)
-                retry_delay *= 2
+                retry_delay *= 2  # 30 -> 60
                 continue
                 
             res.raise_for_status()
             res_json = res.json()
             post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            # تنظيف بسيط للنص من أي علامات Markdown غير مرغوب فيها
+            # تنظيف النص من علامات Markdown
             import re
             post_text = re.sub(r'^\s*\*\s+', '🔹 ', post_text, flags=re.MULTILINE)
             post_text = re.sub(r'\n\s*\*\s+', '\n🔹 ', post_text)
             post_text = re.sub(r'\*\*(.*?)\*\*', r'\1', post_text)
             post_text = re.sub(r'\*(.*?)\*', r'\1', post_text)
             
-            # التحقق من وجود إيموجي كافٍ
+            # التحقق من وجود إيموجي (اختياري)
             emoji_pattern = re.compile("["
                 u"\U0001F600-\U0001F64F"  # emoticons
                 u"\U0001F300-\U0001F5FF"  # symbols & pictographs
@@ -427,29 +412,29 @@ def generate_post(title):
                 u"\U000024C2-\U0001F251"
                 "]+", flags=re.UNICODE)
             
-            emoji_count = len(emoji_pattern.findall(post_text))
-            if emoji_count < 3:
-                logger.warning(f"⚠️ النص يحتوي على {emoji_count} إيموجي فقط، قد يكون غير كافٍ.")
-                # لا نضيف تلقائياً لأن prompt مفصل بما يكفي، فقط نسجل تحذيراً
+            if len(emoji_pattern.findall(post_text)) < 3:
+                logger.warning("⚠️ عدد الإيموجي قليل، لكن سننشر على أي حال.")
             
-            # إذا تجاوز الطول، نطلب نسخة مختصرة (لكن نادراً ما يحدث مع هذا prompt)
+            # تقليم الطول إذا لزم الأمر
             if len(post_text) > MAX_POST_LENGTH:
-                logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، جاري طلب نسخة مختصرة...")
-                # هنا يمكن إعادة المحاولة بطلب مختصر، لكن الأفضل تركها للمستقبل
+                logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، سيتم تقليمه.")
+                post_text = post_text[:MAX_POST_LENGTH]
             
+            logger.info("✅ تم توليد المنشور بنجاح")
             return post_text
             
         except requests.exceptions.Timeout:
-            logger.error("❌ Gemini Error: Timeout")
-            return None
+            logger.error(f"❌ Gemini Error: Timeout (المحاولة {attempt+1})")
         except Exception as e:
-            if attempt == max_retries - 1:
-                logger.error(f"❌ Gemini Error بعد {max_retries} محاولات: {e}")
-                return None
-            else:
-                logger.warning(f"⚠️ Gemini Error (محاولة {attempt+1}/{max_retries}): {e}. إعادة المحاولة بعد {retry_delay} ثانية...")
-                time.sleep(retry_delay)
-                retry_delay *= 2
+            logger.error(f"❌ Gemini Error (المحاولة {attempt+1}): {e}")
+        
+        if attempt < max_retries - 1:
+            logger.warning(f"⚠️ إعادة المحاولة بعد {retry_delay} ثانية...")
+            time.sleep(retry_delay)
+            retry_delay *= 2
+        else:
+            logger.error("❌ فشلت جميع المحاولات. تخطي هذا الخبر.")
+            return None
 
 # =========================
 # النشر على فيسبوك
