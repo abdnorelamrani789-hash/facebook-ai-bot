@@ -345,7 +345,7 @@ def get_google_image(title: str, used_images=None) -> str:
         return None
 
 # =========================
-# توليد المنشور عبر Gemini (نسخة محسّنة مع تحديد صارم للطول)
+# توليد المنشور عبر Gemini (مع إعادة محاولة لخطأ 429)
 # =========================
 def generate_post(title):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
@@ -375,18 +375,28 @@ def generate_post(title):
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    try:
-        # استخدام timeout=60 (بالرقم الإنجليزي)
-        res = requests.post(url, json=data, headers=headers, timeout=60)
-        res.raise_for_status()
-        res_json = res.json()
-        post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        # إذا تجاوز الحد الأقصى، نطلب إعادة كتابة بشكل أقصر
-        if len(post_text) > MAX_POST_LENGTH:
-            logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، جاري طلب نسخة مختصرة...")
+    max_retries = 3
+    retry_delay = 60  # بداية بـ 60 ثانية
+    
+    for attempt in range(max_retries):
+        try:
+            res = requests.post(url, json=data, headers=headers, timeout=60)
             
-            retry_prompt = f"""
+            if res.status_code == 429:
+                logger.warning(f"⚠️ Gemini API: Too Many Requests (429). المحاولة {attempt+1}/{max_retries}. الانتظار {retry_delay} ثانية...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # مضاعفة الانتظار في كل مرة
+                continue
+                
+            res.raise_for_status()
+            res_json = res.json()
+            post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+            
+            # إذا تجاوز الحد الأقصى، نطلب إعادة كتابة بشكل أقصر
+            if len(post_text) > MAX_POST_LENGTH:
+                logger.warning(f"⚠️ النص طويل جداً ({len(post_text)} حرف)، جاري طلب نسخة مختصرة...")
+                
+                retry_prompt = f"""
 المنشور الذي أرسلته سابقاً طويل جداً (تجاوز 2000 حرف). أعد كتابة نفس المنشور ولكن بشكل مختصر جداً، مع الالتزام بالطول التالي: 1500-1800 حرف.
 
 الموضوع: "{title}"
@@ -400,39 +410,44 @@ def generate_post(title):
 
 اكتب النسخة المختصرة مباشرة:
 """
-            data = {"contents": [{"parts": [{"text": retry_prompt}]}]}
-            res = requests.post(url, json=data, headers=headers, timeout=60)
-            res.raise_for_status()
-            res_json = res.json()
-            post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        # إذا لا يزال طويلاً، نقلم بذكاء (نبحث عن آخر جملة كاملة)
-        if len(post_text) > MAX_POST_LENGTH:
-            logger.warning(f"⚠️ لا يزال النص طويلاً ({len(post_text)} حرف)، سيتم تقليمه بذكاء")
+                data = {"contents": [{"parts": [{"text": retry_prompt}]}]}
+                res = requests.post(url, json=data, headers=headers, timeout=60)
+                res.raise_for_status()
+                res_json = res.json()
+                post_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            # نأخذ أول MAX_POST_LENGTH حرف
-            trimmed = post_text[:MAX_POST_LENGTH]
-            # نبحث عن آخر علامة نهاية جملة في النص المقتطع
-            last_punct = -1
-            for punct in ['.', '!', '؟', '...', ').', '].', '"']:
-                pos = trimmed.rfind(punct)
-                if pos > MAX_POST_LENGTH * 0.7:  # ضمن آخر 30%
-                    last_punct = pos
-                    break
+            # إذا لا يزال طويلاً، نقلم بذكاء (نبحث عن آخر جملة كاملة)
+            if len(post_text) > MAX_POST_LENGTH:
+                logger.warning(f"⚠️ لا يزال النص طويلاً ({len(post_text)} حرف)، سيتم تقليمه بذكاء")
+                
+                # نأخذ أول MAX_POST_LENGTH حرف
+                trimmed = post_text[:MAX_POST_LENGTH]
+                # نبحث عن آخر علامة نهاية جملة في النص المقتطع
+                last_punct = -1
+                for punct in ['.', '!', '؟', '...', ').', '].', '"']:
+                    pos = trimmed.rfind(punct)
+                    if pos > MAX_POST_LENGTH * 0.7:  # ضمن آخر 30%
+                        last_punct = pos
+                        break
+                
+                if last_punct != -1:
+                    post_text = trimmed[:last_punct+1]
+                else:
+                    post_text = trimmed
             
-            if last_punct != -1:
-                post_text = trimmed[:last_punct+1]
+            return post_text
+            
+        except requests.exceptions.Timeout:
+            logger.error("❌ Gemini Error: Timeout - استغرقت العملية وقتاً طويلاً")
+            return None
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"❌ Gemini Error بعد {max_retries} محاولات: {e}")
+                return None
             else:
-                post_text = trimmed
-        
-        return post_text
-        
-    except requests.exceptions.Timeout:
-        logger.error("❌ Gemini Error: Timeout - استغرقت العملية وقتاً طويلاً")
-        return None
-    except Exception as e:
-        logger.error(f"❌ Gemini Error: {e}")
-        return None
+                logger.warning(f"⚠️ Gemini Error (محاولة {attempt+1}/{max_retries}): {e}. إعادة المحاولة بعد {retry_delay} ثانية...")
+                time.sleep(retry_delay)
+                retry_delay *= 2
 
 # =========================
 # النشر على فيسبوك
