@@ -392,7 +392,6 @@ def generate_post(title):
 
 **اكتب المنشور مباشرة من دون أي مقدمات إضافية.**
 """
-"""
 
     headers = {"Content-Type": "application/json"}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
