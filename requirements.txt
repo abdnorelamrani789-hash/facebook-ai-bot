@@ -11,9 +11,15 @@ feedparser==6.0.11
 # Image Processing
 Pillow==10.4.0
 
+# Video Generation
+moviepy==2.1.1
+
+# Text to Speech (احتياطي إذا فشل Gemini TTS)
+gTTS==2.5.1
+
 # ================================
-# ملاحظة:
-# المكتبات التالية مدمجة في Python:
+# مدمجة في Python (لا تحتاج تثبيت):
 # os, json, re, logging, time,
-# datetime, urllib, pathlib, io
+# datetime, urllib, pathlib, io,
+# base64, textwrap
 # ================================
