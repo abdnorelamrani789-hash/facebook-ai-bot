@@ -436,8 +436,136 @@ def post_video_to_facebook(script: str) -> dict | None:
         f"🔔 تابعونا لأحدث أخبار التقنية يومياً!\n"
         f"#تقنية_بالدارجة #المغرب_التقني #TechNews #تكنولوجيا"
     )
-    upload_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos"
+    init_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos"
 
     try:
-        # 1️⃣ Start upload
-        logger
+        # 1️⃣ Start
+        logger.info("📤 [1/3] تهيئة رفع الفيديو...")
+        init_res  = SESSION.post(init_url, data={
+            "upload_phase": "start",
+            "file_size":    video_size,
+            "access_token": FB_PAGE_ACCESS_TOKEN
+        }, timeout=30)
+        init_data = init_res.json()
+
+        session_id   = init_data.get("upload_session_id")
+        video_id     = init_data.get("video_id")
+        start_offset = int(init_data.get("start_offset", 0))
+        end_offset   = int(init_data.get("end_offset",   video_size))
+
+        if not session_id:
+            logger.error(f"❌ فشل تهيئة الرفع: {init_data}")
+            return None
+        logger.info(f"✅ Session ID: {session_id}")
+
+        # 2️⃣ Transfer (chunk by chunk)
+        logger.info("📤 [2/3] رفع بيانات الفيديو...")
+        with TEMP_VIDEO.open("rb") as f:
+            while start_offset < video_size:
+                f.seek(start_offset)
+                chunk = f.read(end_offset - start_offset)
+                transfer_res  = SESSION.post(init_url, data={
+                    "upload_phase":      "transfer",
+                    "upload_session_id": session_id,
+                    "start_offset":      start_offset,
+                    "access_token":      FB_PAGE_ACCESS_TOKEN
+                }, files={"video_file_chunk": ("video.mp4", chunk, "video/mp4")},
+                timeout=180)
+                transfer_data = transfer_res.json()
+
+                if "error" in transfer_data:
+                    logger.error(f"❌ فشل رفع الـ chunk: {transfer_data}")
+                    return None
+
+                new_start = int(transfer_data.get("start_offset", start_offset))
+                new_end   = int(transfer_data.get("end_offset",   new_start))
+
+                # منع اللوب اللانهائي
+                if new_start == start_offset:
+                    break
+                start_offset = new_start
+                end_offset   = new_end
+
+        logger.info("✅ تم رفع الفيديو")
+
+        # 3️⃣ Finish
+        logger.info("📤 [3/3] نشر الفيديو...")
+        finish_res  = SESSION.post(init_url, data={
+            "upload_phase":      "finish",
+            "upload_session_id": session_id,
+            "description":       caption,
+            "access_token":      FB_PAGE_ACCESS_TOKEN
+        }, timeout=60)
+        result = finish_res.json()
+
+        if result.get("success") or result.get("id"):
+            final_id = result.get("id") or video_id
+            logger.info(f"✅ تم نشر الفيديو! ID: {final_id}")
+            return {"id": final_id}
+        else:
+            logger.error(f"❌ فشل نشر الفيديو: {result}")
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Facebook Video API Error: {e}")
+        return None
+
+# --------------------- Cleanup ---------------------
+def cleanup():
+    files = [TEMP_AUDIO, TEMP_FRAME, TEMP_VIDEO, Path("temp_audio_gtts.mp3")]
+    for i in range(10):
+        files.append(Path(f"temp_frame_{i}.jpg"))
+    for f in files:
+        f.unlink(missing_ok=True)
+    logger.info("🧹 تم تنظيف الملفات المؤقتة")
+
+# --------------------- Main ---------------------
+def main():
+    logger.info("=" * 50)
+    logger.info("🎬 بدء دورة نشر الفيديو")
+    logger.info("=" * 50)
+
+    try:
+        # 1. جلب الخبر
+        article = get_news_for_video()
+        if not article:
+            logger.error("❌ لا يوجد خبر متاح"); return
+
+        logger.info(f"📰 {article['title'][:70]}...")
+
+        # 2. توليد النص
+        script = generate_video_script(article["title"])
+        if not script:
+            logger.error("❌ فشل توليد النص"); return
+
+        # 3. توليد الصوت
+        if not generate_audio(script):
+            logger.warning("⚠️ فشل الصوت — فيديو بدون صوت")
+
+        # 4. الصورة
+        get_article_image(article)
+
+        # 5. إنشاء الفيديو
+        if not create_video(script):
+            logger.error("❌ فشل إنشاء الفيديو"); return
+
+        # 6. النشر
+        result = post_video_to_facebook(script)
+        if result and result.get("id"):
+            posted = load_video_posted()
+            posted.add(article["norm_link"])
+            save_video_posted(posted)
+            logger.info("✅ دورة الفيديو اكتملت بنجاح!")
+        else:
+            logger.error("❌ فشل النشر على فيسبوك")
+
+    finally:
+        cleanup()
+
+    logger.info("=" * 50)
+    logger.info("🏁 انتهت دورة نشر الفيديو")
+    logger.info("=" * 50)
+
+if __name__ == "__main__":
+    main()
+
