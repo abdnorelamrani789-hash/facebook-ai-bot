@@ -520,7 +520,18 @@ def create_video(script: str) -> bool:
             audio_codec = "aac",
             preset      = "ultrafast",
             logger      = None,
+            ffmpeg_params=[
+                "-pix_fmt",   "yuv420p",    # مطلوب لفيسبوك
+                "-profile:v", "baseline",   # أوسع توافق
+                "-level",     "3.0",
+                "-movflags",  "+faststart", # يسرع التحميل
+                "-b:a",       "128k",       # جودة صوت مناسبة
+            ]
         )
+
+        # تحقق من حجم الفيديو
+        video_size_mb = TEMP_VIDEO.stat().st_size / (1024 * 1024)
+        logger.info(f"📦 حجم الفيديو: {video_size_mb:.1f} MB")
 
         # تنظيف الفريمات المؤقتة
         for i in range(len(frames)):
@@ -538,11 +549,16 @@ def create_video(script: str) -> bool:
 
 # =========================
 # نشر الفيديو على فيسبوك
+# Facebook تتطلب Resumable Upload للفيديوهات
 # =========================
 def post_video_to_facebook(script: str) -> dict | None:
     if not TEMP_VIDEO.exists():
         logger.error("❌ ملف الفيديو غير موجود")
         return None
+
+    video_size = TEMP_VIDEO.stat().st_size
+    video_size_mb = video_size / (1024 * 1024)
+    logger.info(f"📦 حجم الفيديو: {video_size_mb:.1f} MB")
 
     caption = (
         f"{script}\n\n"
@@ -550,27 +566,77 @@ def post_video_to_facebook(script: str) -> dict | None:
         f"#تقنية_بالدارجة #المغرب_التقني #TechNews #تكنولوجيا"
     )
 
+    # ── Resumable Upload (الطريقة الصحيحة لفيسبوك) ──
     try:
-        logger.info("📤 رفع الفيديو على فيسبوك...")
-        fb_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos"
+        # الخطوة 1: تهيئة الرفع
+        logger.info("📤 [1/3] تهيئة رفع الفيديو...")
+        init_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos"
+        init_res = SESSION.post(
+            init_url,
+            data={
+                "upload_phase":   "start",
+                "file_size":      video_size,
+                "access_token":   FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=30,
+        )
+        init_data = init_res.json()
 
-        with TEMP_VIDEO.open("rb") as video_file:
-            res = SESSION.post(
-                fb_url,
-                data={
-                    "description":  caption,
-                    "access_token": FB_PAGE_ACCESS_TOKEN,
-                },
-                files={"source": ("video.mp4", video_file, "video/mp4")},
-                timeout=120,
-            )
+        if "upload_session_id" not in init_data:
+            logger.error(f"❌ فشل تهيئة الرفع: {init_data}")
+            return None
 
-        result = res.json()
-        if "id" in result:
-            logger.info(f"✅ تم نشر الفيديو! ID: {result['id']}")
+        session_id   = init_data["upload_session_id"]
+        video_id     = init_data["video_id"]
+        start_offset = int(init_data["start_offset"])
+        end_offset   = int(init_data["end_offset"])
+        logger.info(f"✅ تم تهيئة الرفع | Session: {session_id}")
+
+        # الخطوة 2: رفع الفيديو
+        logger.info("📤 [2/3] رفع بيانات الفيديو...")
+        with TEMP_VIDEO.open("rb") as f:
+            f.seek(start_offset)
+            chunk = f.read(end_offset - start_offset)
+
+        transfer_res = SESSION.post(
+            init_url,
+            data={
+                "upload_phase":      "transfer",
+                "upload_session_id": session_id,
+                "start_offset":      start_offset,
+                "access_token":      FB_PAGE_ACCESS_TOKEN,
+            },
+            files={"video_file_chunk": ("video.mp4", chunk, "video/mp4")},
+            timeout=180,
+        )
+        transfer_data = transfer_res.json()
+
+        if "start_offset" not in transfer_data:
+            logger.error(f"❌ فشل رفع الفيديو: {transfer_data}")
+            return None
+
+        logger.info("✅ تم رفع الفيديو بنجاح")
+
+        # الخطوة 3: إنهاء الرفع ونشره
+        logger.info("📤 [3/3] نشر الفيديو...")
+        finish_res = SESSION.post(
+            init_url,
+            data={
+                "upload_phase":      "finish",
+                "upload_session_id": session_id,
+                "description":       caption,
+                "access_token":      FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=60,
+        )
+        result = finish_res.json()
+
+        if result.get("success") or "id" in result:
+            logger.info(f"✅ تم نشر الفيديو! ID: {video_id}")
+            return {"id": video_id}
         else:
             logger.error(f"❌ فشل نشر الفيديو: {result}")
-        return result
+            return None
 
     except Exception as e:
         logger.error(f"❌ Facebook Video API Error: {e}")
