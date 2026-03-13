@@ -2,112 +2,168 @@ name: 🤖 Tech News Bot
 
 on:
   schedule:
-    # ينشر مرتين يومياً: 8:30 صباحاً و 6:30 مساءً (توقيت المغرب = UTC+1)
+    # ── بوت المنشور: 8:30 صباحاً و 6:30 مساءً (توقيت المغرب)
     - cron: '30 7,17 * * *'
-  # تشغيل يدوي من GitHub عند الحاجة
+    # ── بوت الفيديو: 12:00 ظهراً (توقيت المغرب)
+    - cron: '0 11 * * *'
   workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'شنو تبغي تشغل؟'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - post_only
+          - video_only
 
-# منع تشغيل أكثر من instance واحد في نفس الوقت
 concurrency:
   group: tech-news-bot
   cancel-in-progress: false
 
 jobs:
-  run-bot:
+
+  # ════════════════════════════════════════
+  # Job 1: بوت المنشور (صورة + نص)
+  # ════════════════════════════════════════
+  post-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # إيقاف تلقائي بعد 15 دقيقة إذا علق
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'schedule' && (
+        contains(fromJson('["30 7 * * *", "30 17 * * *"]'), github.event.schedule) ||
+        github.event.schedule == '30 7,17 * * *'
+      ) ||
+      github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.job_type == 'both' ||
+        github.event.inputs.job_type == 'post_only'
+      )
 
     steps:
-      # ─── 1. استنساخ المستودع ─────────────────────────────
       - name: 📥 استنساخ المستودع
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      # ─── 2. إعداد Python ─────────────────────────────────
       - name: 🐍 إعداد Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'  # تسريع التثبيت بالـ cache
+          cache: 'pip'
 
-      # ─── 3. تثبيت الاعتماديات ────────────────────────────
       - name: 📦 تثبيت الاعتماديات
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests feedparser Pillow
 
-      # ─── 4. تشغيل البوت ──────────────────────────────────
-      - name: 🚀 تشغيل البوت
+      - name: 🚀 تشغيل بوت المنشور
         env:
-          # ── Facebook ──
           FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          # ── AI ──
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
-          # ── أخبار ──
           NEWS_API_KEY:         ${{ secrets.NEWS_API_KEY }}
-          # ── صور ──
           UNSPLASH_ACCESS_KEY:  ${{ secrets.UNSPLASH_ACCESS_KEY }}
           PEXELS_API_KEY:       ${{ secrets.PEXELS_API_KEY }}
         run: python bot.py
 
-      # ─── 5. عرض ملفات الحالة (للمراقبة) ─────────────────
-      - name: 📊 عرض ملفات الحالة
-        if: always()  # يعمل حتى لو فشل البوت
+      - name: 📊 عرض الحالة
+        if: always()
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📄 posted_news.json:"
           cat posted_news.json 2>/dev/null | python3 -c "
           import json,sys
           data = json.load(sys.stdin)
           items = data if isinstance(data, list) else list(data.keys())
-          print(f'  إجمالي الأخبار المنشورة: {len(items)}')
-          if items:
-              print(f'  آخر خبر: {items[-1][:80]}')
-          " 2>/dev/null || echo "  الملف غير موجود بعد"
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📄 sources_state.json:"
-          cat sources_state.json 2>/dev/null | python3 -c "
-          import json,sys
-          data = json.load(sys.stdin)
-          print(f'  المصادر المستخدمة اليوم: {len(data)}')
-          for k,v in list(data.items())[:3]:
-              print(f'  • {k}: {v}')
-          " 2>/dev/null || echo "  الملف غير موجود بعد"
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📄 used_images.json:"
-          cat used_images.json 2>/dev/null | python3 -c "
-          import json,sys
-          data = json.load(sys.stdin)
-          print(f'  إجمالي الصور المستخدمة: {len(data)}')
-          " 2>/dev/null || echo "  الملف غير موجود بعد"
+          print(f'📰 إجمالي الأخبار المنشورة: {len(items)}')
+          " 2>/dev/null || echo "posted_news.json غير موجود"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-      # ─── 6. تنظيف الملفات المؤقتة ────────────────────────
-      - name: 🧹 تنظيف الملفات المؤقتة
+      - name: 🧹 تنظيف
         if: always()
-        run: |
-          rm -f temp_image.jpg
-          echo "✅ تم تنظيف الملفات المؤقتة"
+        run: rm -f temp_image.jpg
 
-      # ─── 7. رفع ملفات الحالة إلى GitHub ──────────────────
-      - name: 💾 حفظ ملفات الحالة
+      - name: 💾 حفظ الحالة
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🤖 تحديث ملفات الحالة [skip ci]"
+          commit_message: "🤖 تحديث ملفات المنشور [skip ci]"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
           file_pattern: "posted_news.json sources_state.json used_images.json"
           skip_dirty_check: false
 
-      # ─── 8. إشعار عند الفشل ──────────────────────────────
       - name: ❌ تسجيل الفشل
         if: failure()
+        run: echo "::error::فشل بوت المنشور — راجع الـ logs"
+
+  # ════════════════════════════════════════
+  # Job 2: بوت الفيديو (Reels يومياً)
+  # ════════════════════════════════════════
+  video-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # الفيديو يحتاج وقت أطول
+    if: |
+      github.event_name == 'schedule' && github.event.schedule == '0 11 * * *' ||
+      github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.job_type == 'both' ||
+        github.event.inputs.job_type == 'video_only'
+      )
+
+    steps:
+      - name: 📥 استنساخ المستودع
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: 🐍 إعداد Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 تثبيت الاعتماديات (مع مكتبات الفيديو)
         run: |
-          echo "::error::فشل البوت في دورة النشر - راجع الـ logs أعلاه"
-          echo "الوقت: $(date)"
-          echo "السبب المحتمل: تحقق من صلاحية الـ API Keys في Secrets"
+          python -m pip install --upgrade pip
+          pip install requests feedparser Pillow moviepy gTTS
+          # تثبيت ffmpeg لـ moviepy
+          sudo apt-get install -y ffmpeg
+
+      - name: 🎬 تشغيل بوت الفيديو
+        env:
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          NEWS_API_KEY:         ${{ secrets.NEWS_API_KEY }}
+          UNSPLASH_ACCESS_KEY:  ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          PEXELS_API_KEY:       ${{ secrets.PEXELS_API_KEY }}
+        run: python video_bot.py
+
+      - name: 📊 عرض الحالة
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          cat video_posted_news.json 2>/dev/null | python3 -c "
+          import json,sys
+          data = json.load(sys.stdin)
+          print(f'🎬 إجمالي الفيديوهات المنشورة: {len(data)}')
+          " 2>/dev/null || echo "video_posted_news.json غير موجود"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: 🧹 تنظيف
+        if: always()
+        run: rm -f temp_audio.mp3 temp_frame.jpg temp_video.mp4 temp_overlay.png
+
+      - name: 💾 حفظ الحالة
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🎬 تحديث ملفات الفيديو [skip ci]"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          file_pattern: "video_posted_news.json"
+          skip_dirty_check: false
+
+      - name: ❌ تسجيل الفشل
+        if: failure()
+        run: echo "::error::فشل بوت الفيديو — راجع الـ logs"
