@@ -1,6 +1,19 @@
-requests
-feedparser
-google-api-core
-google-genai
-python-dotenv
-Pillow
+# ================================
+# Tech News Bot - Requirements
+# ================================
+
+# HTTP Requests
+requests==2.32.3
+
+# RSS Feed Parser
+feedparser==6.0.11
+
+# Image Processing
+Pillow==10.4.0
+
+# ================================
+# ملاحظة:
+# المكتبات التالية مدمجة في Python:
+# os, json, re, logging, time,
+# datetime, urllib, pathlib, io
+# ================================
