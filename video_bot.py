@@ -364,89 +364,49 @@ def create_frames_with_text(script: str, num_frames: int = 5) -> list:
 
         frames.append(base_img)
     return frames
-    # --------------------- ✅ Create video (احترافي + Subtitles) ---------------------
+    # --------------------- ✅ Create video (moviepy v2 API) ---------------------
 def create_video(script: str) -> bool:
-    """
-    إنشاء فيديو احترافي مع:
-    - فريمات خلفية
-    - صوت
-    - Subtitles متزامنة
-    - Zoom-in effect
-    """
     try:
-        from moviepy import ImageClip, AudioFileClip, concatenate_videoclips, vfx, TextClip
-        logger.info("🎬 بدء إنشاء الفيديو الاحترافي...")
+        # ✅ moviepy v2: import مباشر بدون .editor
+        from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
+        logger.info("🎬 بدء إنشاء الفيديو...")
 
-        # ----- 1️⃣ الصوت -----
-        audio = None
-        audio_duration = DURATION
-        if TEMP_AUDIO.exists():
-            try:
-                audio = AudioFileClip(str(TEMP_AUDIO))
-                audio_duration = audio.duration
-                logger.info(f"✅ طول الصوت: {audio_duration:.1f} ثواني")
-            except Exception as e:
-                logger.warning(f"⚠️ فشل تحميل الصوت: {e}")
-
-        # ----- 2️⃣ الفريمات -----
-        frames = create_frames_with_text(script, num_frames=5)
-        frame_duration = audio_duration / len(frames)
-        clips = []
+        frames         = create_frames_with_text(script, 5)
+        frame_duration = DURATION / len(frames)
+        clips          = []
 
         for i, frame in enumerate(frames):
             fpath = Path(f"temp_frame_{i}.jpg")
             frame.save(fpath, "JPEG", quality=90)
-            clip = ImageClip(str(fpath)).with_duration(frame_duration)
-            # Zoom-in effect
-            clip = clip.fx(vfx.resize, lambda t: 1 + 0.05 * (t/frame_duration))
-            clips.append(clip)
+            # ✅ moviepy v2: with_duration بدل set_duration
+            clips.append(ImageClip(str(fpath)).with_duration(frame_duration))
 
         video = concatenate_videoclips(clips, method="compose")
 
-        # ----- 3️⃣ دمج الصوت -----
-        if audio:
-            video = video.with_audio(audio)
-            video = video.with_duration(audio.duration)
+        if TEMP_AUDIO.exists():
+            try:
+                audio = AudioFileClip(str(TEMP_AUDIO))
+                # ✅ moviepy v2: with_audio و with_duration بدل set_audio و set_duration
+                video = video.with_duration(min(audio.duration + 1, DURATION))
+                video = video.with_audio(audio)
+                logger.info(f"✅ تم إضافة الصوت ({audio.duration:.1f}ث)")
+            except Exception as e:
+                logger.warning(f"⚠️ فشل إضافة الصوت: {e}")
 
-        # ----- 4️⃣ توليد Subtitles متزامنة -----
-        subtitle_clips = []
-        words = script.split()
-        total_words = len(words)
-        duration_per_word = audio_duration / total_words if total_words > 0 else 0
-        current_time = 0
-        font = get_arabic_font(60)
-
-        for word in words:
-            txt_clip = TextClip(
-                word,
-                fontsize=60,
-                color='white',
-                font='DejaVuSans-Bold',
-                method='caption',
-                size=(VIDEO_WIDTH * 0.9, None),
-                align='center'
-            ).set_start(current_time).set_duration(duration_per_word).set_position(("center", VIDEO_HEIGHT*0.75))
-            subtitle_clips.append(txt_clip)
-            current_time += duration_per_word
-
-        # دمج الفيديو مع Subtitles
-        final_video = concatenate_videoclips([video] + subtitle_clips, method="compose")
-
-        # ----- 5️⃣ تصدير الفيديو -----
         logger.info("⏳ جاري تصدير الفيديو...")
-        final_video.write_videofile(
+        video.write_videofile(
             str(TEMP_VIDEO),
-            fps=FPS,
-            codec="libx264",
-            audio_codec="aac",
-            preset="ultrafast",
-            logger=None,
+            fps         = FPS,
+            codec       = "libx264",
+            audio_codec = "aac",
+            preset      = "ultrafast",
+            logger      = None,
             ffmpeg_params=[
-                "-pix_fmt", "yuv420p",
+                "-pix_fmt",   "yuv420p",
                 "-profile:v", "baseline",
-                "-level", "3.0",
-                "-movflags", "+faststart",
-                "-b:a", "128k",
+                "-level",     "3.0",
+                "-movflags",  "+faststart",
+                "-b:a",       "128k",
             ]
         )
 
