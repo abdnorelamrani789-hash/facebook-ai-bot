@@ -1,52 +1,113 @@
-name: Tech News Bot
+name: 🤖 Tech News Bot
 
 on:
   schedule:
+    # ينشر مرتين يومياً: 8:30 صباحاً و 6:30 مساءً (توقيت المغرب = UTC+1)
     - cron: '30 7,17 * * *'
+  # تشغيل يدوي من GitHub عند الحاجة
   workflow_dispatch:
+
+# منع تشغيل أكثر من instance واحد في نفس الوقت
+concurrency:
+  group: tech-news-bot
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # إيقاف تلقائي بعد 15 دقيقة إذا علق
 
     steps:
-      - name: استنساخ المستودع باستخدام PAT token
+      # ─── 1. استنساخ المستودع ─────────────────────────────
+      - name: 📥 استنساخ المستودع
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: إعداد Python
+      # ─── 2. إعداد Python ─────────────────────────────────
+      - name: 🐍 إعداد Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'  # تسريع التثبيت بالـ cache
 
-      - name: تثبيت الاعتماديات
+      # ─── 3. تثبيت الاعتماديات ────────────────────────────
+      - name: 📦 تثبيت الاعتماديات
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: تشغيل البوت
+      # ─── 4. تشغيل البوت ──────────────────────────────────
+      - name: 🚀 تشغيل البوت
         env:
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          # ── Facebook ──
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ── AI ──
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          # ── أخبار ──
+          NEWS_API_KEY:         ${{ secrets.NEWS_API_KEY }}
+          # ── صور ──
+          UNSPLASH_ACCESS_KEY:  ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          PEXELS_API_KEY:       ${{ secrets.PEXELS_API_KEY }}
         run: python bot.py
 
-      - name: عرض ملفات الحالة
+      # ─── 5. عرض ملفات الحالة (للمراقبة) ─────────────────
+      - name: 📊 عرض ملفات الحالة
+        if: always()  # يعمل حتى لو فشل البوت
         run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📄 posted_news.json:"
-          cat posted_news.json || echo "الملف غير موجود"
-          echo "📄 sources_state.json:"
-          cat sources_state.json || echo "الملف غير موجود"
-          echo "📄 used_images.json:"
-          cat used_images.json || echo "الملف غير موجود"
+          cat posted_news.json 2>/dev/null | python3 -c "
+          import json,sys
+          data = json.load(sys.stdin)
+          items = data if isinstance(data, list) else list(data.keys())
+          print(f'  إجمالي الأخبار المنشورة: {len(items)}')
+          if items:
+              print(f'  آخر خبر: {items[-1][:80]}')
+          " 2>/dev/null || echo "  الملف غير موجود بعد"
 
-      - name: رفع التغييرات إلى المستودع
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📄 sources_state.json:"
+          cat sources_state.json 2>/dev/null | python3 -c "
+          import json,sys
+          data = json.load(sys.stdin)
+          print(f'  المصادر المستخدمة اليوم: {len(data)}')
+          for k,v in list(data.items())[:3]:
+              print(f'  • {k}: {v}')
+          " 2>/dev/null || echo "  الملف غير موجود بعد"
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📄 used_images.json:"
+          cat used_images.json 2>/dev/null | python3 -c "
+          import json,sys
+          data = json.load(sys.stdin)
+          print(f'  إجمالي الصور المستخدمة: {len(data)}')
+          " 2>/dev/null || echo "  الملف غير موجود بعد"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # ─── 6. تنظيف الملفات المؤقتة ────────────────────────
+      - name: 🧹 تنظيف الملفات المؤقتة
+        if: always()
+        run: |
+          rm -f temp_image.jpg
+          echo "✅ تم تنظيف الملفات المؤقتة"
+
+      # ─── 7. رفع ملفات الحالة إلى GitHub ──────────────────
+      - name: 💾 حفظ ملفات الحالة
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "تحديث ملفات الحالة [skip ci]"
+          commit_message: "🤖 تحديث ملفات الحالة [skip ci]"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
           file_pattern: "posted_news.json sources_state.json used_images.json"
           skip_dirty_check: false
+
+      # ─── 8. إشعار عند الفشل ──────────────────────────────
+      - name: ❌ تسجيل الفشل
+        if: failure()
+        run: |
+          echo "::error::فشل البوت في دورة النشر - راجع الـ logs أعلاه"
+          echo "الوقت: $(date)"
+          echo "السبب المحتمل: تحقق من صلاحية الـ API Keys في Secrets"
