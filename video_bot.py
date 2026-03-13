@@ -103,6 +103,8 @@ def get_arabic_font(size: int = 60):
 # --------------------- Get news ---------------------
 def get_news_for_video() -> dict | None:
     posted = load_video_posted()
+
+    # NewsAPI أولاً
     if NEWS_API_KEY:
         logger.info("📡 جلب الأخبار من NewsAPI...")
         try:
@@ -137,6 +139,7 @@ def get_news_for_video() -> dict | None:
                 }
         except Exception as e:
             logger.error(f"❌ NewsAPI Error: {e}")
+
     # RSS احتياطي
     rss_sources = [
         "https://techcrunch.com/feed/",
@@ -161,10 +164,11 @@ def get_news_for_video() -> dict | None:
                     }
         except Exception as e:
             logger.error(f"❌ RSS Error: {e}")
+
     logger.error("❌ لم يُعثر على خبر جديد")
     return None
 
-# --------------------- ✅ Video script ---------------------
+# --------------------- ✅ Video script (Gemini حقيقي) ---------------------
 def generate_video_script(title: str) -> str | None:
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -213,7 +217,7 @@ def generate_video_script(title: str) -> str | None:
             if attempt < 3: time.sleep(delay); delay *= 2
     return None
 
-# --------------------- ✅ Audio ---------------------
+# --------------------- ✅ Audio (Gemini TTS حقيقي) ---------------------
 def generate_audio(script: str) -> bool:
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -256,6 +260,7 @@ def generate_audio(script: str) -> bool:
             )
             if not audio_data:
                 return generate_audio_gtts(script)
+            # ✅ Gemini TTS → PCM → WAV
             pcm_bytes = base64.b64decode(audio_data)
             return pcm_to_wav(pcm_bytes, TEMP_AUDIO)
         except Exception as e:
@@ -323,6 +328,7 @@ def get_article_image(article: dict) -> bool:
         except Exception as e:
             logger.error(f"❌ Unsplash Error: {e}")
 
+    # خلفية لونية احتياطية
     logger.warning("⚠️ استخدام خلفية لونية احتياطية")
     img = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT), color=(15, 20, 40))
     img.save(TEMP_FRAME, "JPEG", quality=90)
@@ -338,6 +344,8 @@ def create_frames_with_text(script: str, num_frames: int = 5) -> list:
     for i in range(num_frames):
         lines_to_show = lines[:min(i + 2, len(lines))]
         base_img = Image.open(TEMP_FRAME).copy()
+
+        # طبقة داكنة
         overlay  = Image.new("RGBA", (VIDEO_WIDTH, VIDEO_HEIGHT), (0, 0, 0, 150))
         base_img = base_img.convert("RGBA")
         base_img = Image.alpha_composite(base_img, overlay).convert("RGB")
@@ -347,21 +355,23 @@ def create_frames_with_text(script: str, num_frames: int = 5) -> list:
         for j, line in enumerate(lines_to_show):
             y    = int(y_start + j * 90)
             font = font_large if j == 0 else font_small
+            # ظل
             draw.text((VIDEO_WIDTH // 2 + 3, y + 3), line, font=font, fill=(0, 0, 0, 180), anchor="mm")
+            # نص أبيض
             draw.text((VIDEO_WIDTH // 2, y), line, font=font, fill="white", anchor="mm")
 
         frames.append(base_img)
     return frames
 
-# --------------------- ✅ Create video Facebook-friendly ---------------------
+# --------------------- ✅ Create video (moviepy v2 API) ---------------------
 def create_video(script: str) -> bool:
     try:
         from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
-        logger.info("🎬 بدء إنشاء الفيديو المتوافق مع Facebook...")
+        logger.info("🎬 بدء إنشاء الفيديو...")
 
-        frames = create_frames_with_text(script, 5)
+        frames         = create_frames_with_text(script, 5)
         frame_duration = DURATION / len(frames)
-        clips = []
+        clips          = []
 
         for i, frame in enumerate(frames):
             fpath = Path(f"temp_frame_{i}.jpg")
@@ -375,66 +385,68 @@ def create_video(script: str) -> bool:
                 audio = AudioFileClip(str(TEMP_AUDIO))
                 video = video.with_duration(min(audio.duration + 1, DURATION))
                 video = video.with_audio(audio)
-                logger.info(f"✅ تم إضافة الصوت ({audio.duration:.1f} ث)")
+                logger.info(f"✅ تم إضافة الصوت ({audio.duration:.1f}ث)")
             except Exception as e:
                 logger.warning(f"⚠️ فشل إضافة الصوت: {e}")
 
+        logger.info("⏳ جاري تصدير الفيديو...")
         video.write_videofile(
             str(TEMP_VIDEO),
-            fps=FPS,
-            codec="libx264",
-            audio_codec="aac",
-            preset="ultrafast",
+            fps         = FPS,
+            codec       = "libx264",
+            audio_codec = "aac",
+            preset      = "ultrafast",
+            logger      = None,
             ffmpeg_params=[
+                "-pix_fmt",   "yuv420p",
                 "-profile:v", "baseline",
-                "-level", "3.0",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                "-b:a", "128k",
-            ],
-            logger=None
+                "-level",     "3.0",
+                "-movflags",  "+faststart",
+                "-b:a",       "128k",
+            ]
         )
 
         for i in range(len(frames)):
             Path(f"temp_frame_{i}.jpg").unlink(missing_ok=True)
 
         size_mb = TEMP_VIDEO.stat().st_size / (1024 * 1024)
-        logger.info(f"✅ تم إنشاء الفيديو! الحجم: {size_mb:.1f} MB")
+        logger.info(f"✅ تم إنشاء الفيديو! ({size_mb:.1f} MB)")
         return True
+
+    except ImportError:
+        logger.error("❌ MoviePy غير مثبت — pip install moviepy")
+        return False
     except Exception as e:
         logger.error(f"❌ Create video error: {e}")
         return False
 
-# --------------------- Post video (simple direct upload) ---------------------
+# --------------------- Post video to Facebook (Resumable Upload) ---------------------
 def post_video_to_facebook(script: str) -> dict | None:
     if not TEMP_VIDEO.exists():
         logger.error("❌ ملف الفيديو غير موجود")
         return None
 
-    caption = f"{script}\n\n🔔 تابعونا لأحدث أخبار التقنية يومياً!\n#تقنية_بالدارجة #المغرب_التقني #TechNews #تكنولوجيا"
+    video_size = TEMP_VIDEO.stat().st_size
+    caption    = (
+        f"{script}\n\n"
+        f"🔔 تابعونا لأحدث أخبار التقنية يومياً!\n"
+        f"#تقنية_بالدارجة #المغرب_التقني #TechNews #تكنولوجيا"
+    )
+    init_url = f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos"
+
     try:
-        files = {"file": (TEMP_VIDEO.name, TEMP_VIDEO.open("rb"), "video/mp4")}
-        data  = {"access_token": FB_PAGE_ACCESS_TOKEN, "description": caption}
-        res = SESSION.post(f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos", files=files, data=data)
-        result = res.json()
-        if result.get("id"):
-            logger.info(f"✅ تم نشر الفيديو! ID: {result['id']}")
-            return {"id": result["id"]}
-        else:
-            logger.error(f"❌ فشل نشر الفيديو: {result}")
-            return None
-    except Exception as e:
-        logger.error(f"❌ Facebook Video API Error: {e}")
-        return None
+        logger.info("📤 [1/3] تهيئة رفع الفيديو...")
+        init_res  = SESSION.post(init_url, data={
+            "upload_phase": "start",
+            "file_size":    video_size,
+            "access_token": FB_PAGE_ACCESS_TOKEN
+        }, timeout=30)
+        init_data = init_res.json()
 
-# --------------------- Cleanup ---------------------
-def cleanup():
-    files = [TEMP_AUDIO, TEMP_FRAME, TEMP_VIDEO, Path("temp_audio_gtts.mp3")]
-    for i in range(10):
-        files.append(Path(f"temp_frame_{i}.jpg"))
-    for f in files:
-        f.unlink(missing_ok=True)
-    logger.info("🧹 تم تنظيف الملفات المؤقتة")
+        session_id   = init_data.get("upload_session_id")
+        video_id     = init_data.get("video_id")
+        start_offset = int(init_data.get("start_offset", 0))
+        end_offset   = int(init_data.get("end_offset",   video_size))
 
-# --------------------- Main ---------------------
-def main():
+        if not session_id:
+            logger.error(f"❌ فشل تهيئة الرفع: {init_data}")
