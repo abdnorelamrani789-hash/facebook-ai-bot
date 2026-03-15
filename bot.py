@@ -9,7 +9,7 @@ import requests
 import io
 from datetime import date
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 # =========================
 # إعداد التسجيل
@@ -539,6 +539,7 @@ def download_and_resize_image(url: str) -> bool:
         if img.width > MAX_IMAGE_WIDTH:
             ratio = MAX_IMAGE_WIDTH / img.width
             img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+        img = add_watermark(img)
         img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
         return True
     except Exception as e:
@@ -552,6 +553,89 @@ def validate_image() -> bool:
         return header[:3] == b"\xff\xd8\xff" or header[:4] == b"\x89PNG"
     except Exception:
         return False
+
+
+# =========================
+# إضافة Watermark للصورة
+# =========================
+def add_watermark(img: Image.Image, text: str = "تقنية بالدارجة") -> Image.Image:
+    """
+    يضيف Watermark احترافي للصورة:
+    - نص الصفحة في الركن السفلي الأيسر
+    - خلفية شبه شفافة خلف النص
+    - يتكيف مع حجم الصورة تلقائياً
+    """
+    try:
+        img      = img.convert("RGBA")
+        W, H     = img.size
+        overlay  = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw     = ImageDraw.Draw(overlay)
+
+        # حجم الخط بناءً على عرض الصورة
+        font_size = max(22, W // 45)
+
+        # البحث عن أفضل font متاح
+        font_paths = [
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+        font = ImageFont.load_default()
+        for fp in font_paths:
+            if Path(fp).exists():
+                try:
+                    font = ImageFont.truetype(fp, font_size)
+                    break
+                except Exception:
+                    continue
+
+        # حساب حجم النص
+        bbox    = draw.textbbox((0, 0), text, font=font)
+        txt_w   = bbox[2] - bbox[0]
+        txt_h   = bbox[3] - bbox[1]
+        padding = 12
+
+        # موقع Watermark: ركن أسفل يسار
+        margin = 20
+        x      = margin
+        y      = H - txt_h - padding * 2 - margin
+
+        # خلفية داكنة شفافة خلف النص
+        draw.rounded_rectangle(
+            [x - padding, y - padding,
+             x + txt_w + padding, y + txt_h + padding],
+            radius = 8,
+            fill   = (0, 0, 0, 160),
+        )
+        # 🤖 إيموجي الصفحة قبل النص
+        full_text  = "🤖 " + text
+        # حساب الحجم الكامل للنص مع الإيموجي
+        full_bbox  = draw.textbbox((0, 0), full_text, font=font)
+        full_w     = full_bbox[2] - full_bbox[0]
+        # تحديث عرض الخلفية ليناسب النص الكامل
+        draw.rounded_rectangle(
+            [x - padding, y - padding,
+             x + full_w + padding, y + txt_h + padding],
+            radius = 8,
+            fill   = (0, 0, 0, 160),
+        )
+        # رسم النص مع الإيموجي
+        draw.text(
+            (x, y),
+            full_text,
+            font = font,
+            fill = (255, 255, 255, 230),
+        )
+
+        # دمج الـ overlay مع الصورة الأصلية
+        result = Image.alpha_composite(img, overlay).convert("RGB")
+        logger.info(f"✅ تم إضافة Watermark")
+        return result
+
+    except Exception as e:
+        logger.warning(f"⚠️ فشل إضافة Watermark: {e}")
+        return img.convert("RGB")
+
 
 
 # =========================
@@ -616,6 +700,7 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
                 if img.width > MAX_IMAGE_WIDTH:
                     ratio = MAX_IMAGE_WIDTH / img.width
                     img = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+                img = add_watermark(img)
                 img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
                 logger.info(f"✅ Gemini Image: {img.width}x{img.height}")
                 return True
