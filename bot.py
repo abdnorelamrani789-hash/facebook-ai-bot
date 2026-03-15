@@ -7,6 +7,7 @@ import random
 import logging
 import requests
 import io
+import math
 from datetime import date
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -528,225 +529,206 @@ def generate_post(content: dict) -> str | None:
 # =========================
 # جلب الصورة
 # =========================
-
-# =========================
-# تصاميم الصور لكل نوع محتوى
+# تصاميم الصور v2 — أيقونات هندسية احترافية
 # =========================
 DESIGNS = {
-    "حيلة تقنية": {
-        "bg": [(10, 15, 40), (20, 80, 160)],
-        "accent": (0, 180, 255),
-        "emoji": "💡",
-        "pattern": "circuit",
-    },
-    "تطبيق مفيد": {
-        "bg": [(20, 10, 50), (100, 30, 150)],
-        "accent": (180, 80, 255),
-        "emoji": "📱",
-        "pattern": "dots",
-    },
-    "أداة AI": {
-        "bg": [(5, 20, 35), (10, 100, 120)],
-        "accent": (0, 220, 200),
-        "emoji": "🤖",
-        "pattern": "grid",
-    },
-    "تحذير أمني": {
-        "bg": [(35, 5, 5), (120, 20, 20)],
-        "accent": (255, 60, 60),
-        "emoji": "🔒",
-        "pattern": "lines",
-    },
-    "مقارنة تقنية": {
-        "bg": [(10, 25, 10), (20, 100, 60)],
-        "accent": (0, 220, 100),
-        "emoji": "⚔️",
-        "pattern": "split",
-    },
-    "خطوات عملية": {
-        "bg": [(25, 20, 5), (120, 90, 10)],
-        "accent": (255, 200, 0),
-        "emoji": "📋",
-        "pattern": "dots",
-    },
-    "إحصائيات صادمة": {
-        "bg": [(5, 5, 35), (40, 20, 120)],
-        "accent": (100, 150, 255),
-        "emoji": "📊",
-        "pattern": "grid",
-    },
-    "سؤال تفاعلي": {
-        "bg": [(30, 10, 30), (120, 40, 120)],
-        "accent": (255, 100, 200),
-        "emoji": "🗳️",
-        "pattern": "circles",
-    },
-    "نصيحة احترافية": {
-        "bg": [(20, 15, 5), (90, 65, 15)],
-        "accent": (220, 170, 50),
-        "emoji": "🎯",
-        "pattern": "lines",
-    },
-    "ترند تقني": {
-        "bg": [(5, 5, 5), (40, 5, 80)],
-        "accent": (150, 50, 255),
-        "emoji": "🔥",
-        "pattern": "circuit",
-    },
+    "حيلة تقنية":     {"bg1": (8,12,35),  "bg2": (15,60,130), "accent": (0,180,255),  "icon": "lightbulb"},
+    "تطبيق مفيد":     {"bg1": (18,8,45),  "bg2": (80,25,140), "accent": (180,80,255), "icon": "phone"},
+    "أداة AI":         {"bg1": (4,18,30),  "bg2": (8,85,105),  "accent": (0,220,200),  "icon": "robot"},
+    "تحذير أمني":     {"bg1": (30,4,4),   "bg2": (110,15,15), "accent": (255,55,55),  "icon": "shield"},
+    "مقارنة تقنية":   {"bg1": (8,22,8),   "bg2": (15,90,50),  "accent": (0,210,90),   "icon": "compare"},
+    "خطوات عملية":    {"bg1": (22,18,4),  "bg2": (110,80,8),  "accent": (255,195,0),  "icon": "steps"},
+    "إحصائيات صادمة": {"bg1": (4,4,30),   "bg2": (35,18,110), "accent": (90,140,255), "icon": "chart"},
+    "سؤال تفاعلي":    {"bg1": (28,8,28),  "bg2": (110,35,110),"accent": (255,95,195), "icon": "question"},
+    "نصيحة احترافية": {"bg1": (18,13,4),  "bg2": (85,60,12),  "accent": (215,165,45), "icon": "target"},
+    "ترند تقني":       {"bg1": (4,4,4),    "bg2": (38,4,75),   "accent": (145,45,255), "icon": "fire"},
 }
 
-# =========================
-# أدوات مساعدة للصورة
-# =========================
-def _get_font(size: int) -> ImageFont.FreeTypeFont:
+def _get_font(size: int):
     for fp in [
         "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]:
         if Path(fp).exists():
-            try:
-                return ImageFont.truetype(fp, size)
-            except Exception:
-                continue
+            try: return ImageFont.truetype(fp, size)
+            except: continue
     return ImageFont.load_default()
 
-def _draw_gradient(img: Image.Image, c1: tuple, c2: tuple) -> Image.Image:
+def _draw_gradient(img, c1, c2):
     W, H = img.size
     draw = ImageDraw.Draw(img)
     for x in range(W):
-        r = int(c1[0] + (c2[0] - c1[0]) * x / W)
-        g = int(c1[1] + (c2[1] - c1[1]) * x / W)
-        b = int(c1[2] + (c2[2] - c1[2]) * x / W)
-        draw.line([(x, 0), (x, H)], fill=(r, g, b))
+        r = int(c1[0] + (c2[0]-c1[0]) * x/W)
+        g = int(c1[1] + (c2[1]-c1[1]) * x/W)
+        b = int(c1[2] + (c2[2]-c1[2]) * x/W)
+        draw.line([(x,0),(x,H)], fill=(r,g,b))
     return img
 
-def _draw_pattern(draw, W: int, H: int, pattern: str, accent: tuple):
-    a15, a20, a30, a40 = (*accent, 15), (*accent, 20), (*accent, 30), (*accent, 40)
-    if pattern == "circuit":
-        for x in range(0, W, 80):
-            draw.line([(x, 0), (x, H)], fill=(*accent, 12), width=1)
-        for y in range(0, H, 80):
-            draw.line([(0, y), (W, y)], fill=(*accent, 12), width=1)
-        for x in range(0, W, 80):
-            for y in range(0, H, 80):
-                draw.ellipse([x-3, y-3, x+3, y+3], fill=(*accent, 35))
-    elif pattern == "dots":
-        for x in range(0, W, 50):
-            for y in range(0, H, 50):
-                r = 3 if (x + y) % 100 == 0 else 2
-                draw.ellipse([x-r, y-r, x+r, y+r], fill=a30)
-    elif pattern == "grid":
-        for x in range(0, W, 60):
-            draw.line([(x, 0), (x, H)], fill=(*accent, 10), width=1)
-        for y in range(0, H, 60):
-            draw.line([(0, y), (W, y)], fill=(*accent, 10), width=1)
-    elif pattern == "lines":
-        for i in range(0, W + H, 60):
-            draw.line([(i, 0), (0, i)], fill=(*accent, 12), width=1)
-    elif pattern == "circles":
-        cx, cy = W // 2, H // 2
-        for r in range(50, max(W, H), 80):
-            draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=a20, width=1)
-    elif pattern == "split":
-        draw.line([(W//2, 0), (W//2, H)], fill=(*accent, 25), width=2)
-        for x in range(0, W, 100):
-            draw.line([(x, 0), (x, H)], fill=(*accent, 8), width=1)
+def _draw_icon(draw, cx, cy, size, icon_type, accent):
+    """أيقونات هندسية مرسومة بالكود — لا تعتمد على fonts"""
+    s  = size
+    lw = max(4, s // 20)
+
+    if icon_type == "lightbulb":
+        draw.ellipse([cx-s//2, cy-s//2, cx+s//2, cy+s//4], outline=accent, width=lw)
+        draw.rectangle([cx-s//5, cy+s//4, cx+s//5, cy+s//2], outline=accent, width=lw)
+        draw.line([(cx-s//4, cy+s//2),(cx+s//4, cy+s//2)], fill=accent, width=lw)
+        for angle in [0,45,90,135,180,225,270,315]:
+            rad = math.radians(angle)
+            x1 = cx+int((s//2+15)*math.cos(rad)); y1 = cy+int((s//2+15)*math.sin(rad))
+            x2 = cx+int((s//2+30)*math.cos(rad)); y2 = cy+int((s//2+30)*math.sin(rad))
+            draw.line([(x1,y1),(x2,y2)], fill=(*accent,150), width=max(2,lw//2))
+
+    elif icon_type == "phone":
+        pw,ph = s//3, s*2//3
+        draw.rounded_rectangle([cx-pw,cy-ph//2,cx+pw,cy+ph//2], radius=pw//3, outline=accent, width=lw)
+        draw.ellipse([cx-4,cy+ph//2-20,cx+4,cy+ph//2-12], fill=accent)
+        draw.line([(cx-s//5,cy-ph//2+12),(cx+s//5,cy-ph//2+12)], fill=accent, width=lw)
+
+    elif icon_type == "robot":
+        hw = s//2
+        draw.rounded_rectangle([cx-hw,cy-hw//2,cx+hw,cy+hw//2], radius=hw//6, outline=accent, width=lw)
+        ew = s//8
+        draw.ellipse([cx-s//4-ew,cy-ew,cx-s//4+ew,cy+ew], fill=accent)
+        draw.ellipse([cx+s//4-ew,cy-ew,cx+s//4+ew,cy+ew], fill=accent)
+        draw.arc([cx-s//4,cy+s//12,cx+s//4,cy+s//4], start=0, end=180, fill=accent, width=lw)
+        draw.line([(cx,cy-hw//2),(cx,cy-hw//2-s//4)], fill=accent, width=lw)
+        draw.ellipse([cx-6,cy-hw//2-s//4-6,cx+6,cy-hw//2-s//4+6], fill=accent)
+
+    elif icon_type == "shield":
+        pts = [(cx,cy-s//2),(cx+s//2,cy-s//4),(cx+s//2,cy+s//8),
+               (cx,cy+s//2),(cx-s//2,cy+s//8),(cx-s//2,cy-s//4)]
+        draw.polygon(pts, outline=accent, width=lw)
+        draw.line([(cx-s//5,cy),(cx,cy+s//5),(cx+s//4,cy-s//6)], fill=accent, width=lw*2)
+
+    elif icon_type == "compare":
+        draw.line([(cx-s//3,cy-s//4),(cx+s//3,cy-s//4)], fill=accent, width=lw)
+        draw.polygon([(cx+s//3,cy-s//4),(cx+s//3-s//8,cy-s//4-s//10),(cx+s//3-s//8,cy-s//4+s//10)], fill=accent)
+        draw.line([(cx+s//3,cy+s//4),(cx-s//3,cy+s//4)], fill=accent, width=lw)
+        draw.polygon([(cx-s//3,cy+s//4),(cx-s//3+s//8,cy+s//4-s//10),(cx-s//3+s//8,cy+s//4+s//10)], fill=accent)
+        draw.line([(cx,cy-s//2),(cx,cy+s//2)], fill=(*accent,80), width=2)
+
+    elif icon_type == "steps":
+        step = s//4
+        for i in range(4):
+            x1 = cx-s//2+i*step; y1 = cy+s//4-i*step//2
+            draw.rectangle([x1,y1,x1+step,y1+(4-i)*step//2], outline=accent, width=lw)
+
+    elif icon_type == "chart":
+        bars = [0.4,0.7,0.5,0.9,0.6]
+        bw   = s//7
+        for i,h in enumerate(bars):
+            bh=int(s*h*0.7); bx=cx-s//2+i*(bw+4); by=cy+s//3
+            draw.rectangle([bx,by-bh,bx+bw,by], fill=(*accent,180), outline=accent, width=1)
+        draw.line([(cx-s//2,cy+s//3),(cx+s//2,cy+s//3)], fill=accent, width=lw)
+
+    elif icon_type == "question":
+        draw.arc([cx-s//3,cy-s//2,cx+s//3,cy], start=240, end=60, fill=accent, width=lw*2)
+        draw.line([(cx,cy),(cx,cy+s//5)], fill=accent, width=lw*2)
+        draw.ellipse([cx-5,cy+s//4,cx+5,cy+s//4+10], fill=accent)
+
+    elif icon_type == "target":
+        for r in [s//2,s//3,s//6]:
+            draw.ellipse([cx-r,cy-r,cx+r,cy+r], outline=accent, width=lw)
+        draw.ellipse([cx-8,cy-8,cx+8,cy+8], fill=accent)
+        draw.line([(cx,cy-s//2-15),(cx,cy+s//2+15)], fill=(*accent,100), width=1)
+        draw.line([(cx-s//2-15,cy),(cx+s//2+15,cy)], fill=(*accent,100), width=1)
+
+    elif icon_type == "fire":
+        pts = [(cx,cy-s//2),(cx+s//4,cy-s//4),(cx+s//3,cy+s//6),
+               (cx+s//6,cy+s//3),(cx,cy+s//2),(cx-s//6,cy+s//3),
+               (cx-s//3,cy+s//6),(cx-s//4,cy-s//4)]
+        draw.polygon(pts, outline=accent, width=lw)
+        inner = [(cx,cy-s//5),(cx+s//8,cy+s//8),(cx,cy+s//3),(cx-s//8,cy+s//8)]
+        draw.polygon(inner, fill=(*accent,120))
 
 # =========================
-# ✅ توليد الصورة بـ Pillow
+# ✅ توليد الصورة v2
 # =========================
 def create_post_image(content_type: str, topic: str,
                       page_name: str = "تقنية بالدارجة") -> bool:
-    """
-    ينشئ صورة احترافية مخصصة لكل نوع محتوى بـ Pillow.
-    لا يعتمد على أي API خارجي — مجاني 100% وسريع.
-    """
     try:
         W, H   = 1200, 630
         design = DESIGNS.get(content_type, DESIGNS["حيلة تقنية"])
         accent = design["accent"]
 
-        # 1. خلفية متدرجة
+        # خلفية متدرجة
         img  = Image.new("RGB", (W, H))
-        img  = _draw_gradient(img, design["bg"][0], design["bg"][1])
+        img  = _draw_gradient(img, design["bg1"], design["bg2"])
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # 2. زخارف الخلفية
-        _draw_pattern(draw, W, H, design["pattern"], accent)
+        # شبكة خفيفة
+        for x in range(0, W, 70):
+            draw.line([(x,0),(x,H)], fill=(*accent,10), width=1)
+        for y in range(0, H, 70):
+            draw.line([(0,y),(W,y)], fill=(*accent,10), width=1)
 
-        # 3. شريط لون على اليسار
-        draw.rectangle([0, 0, 8, H], fill=(*accent, 255))
+        # دوائر زخرفية
+        for r, a in [(350,8),(250,12),(150,18)]:
+            draw.ellipse([W*3//4-r, H//2-r, W*3//4+r, H//2+r],
+                         outline=(*accent,a), width=2)
 
-        # 4. دائرة كبيرة شفافة (يمين)
-        draw.ellipse([W//2, -H//3, W+H//2, H+H//3], fill=(*accent, 8))
+        # شريط يسار
+        for i in range(12):
+            draw.rectangle([i,0,i+1,H], fill=(*accent,int(255*(1-i/12))))
 
-        # 5. إيموجي كبير في المنتصف
-        emoji_font = _get_font(160)
-        emoji      = design["emoji"]
-        e_bbox     = draw.textbbox((0, 0), emoji, font=emoji_font)
-        e_w  = e_bbox[2] - e_bbox[0]
-        e_h  = e_bbox[3] - e_bbox[1]
-        e_x  = (W - e_w) // 2 - e_bbox[0]
-        e_y  = H // 2 - e_h // 2 - e_bbox[1] - 40
-        draw.text((e_x+4, e_y+4), emoji, font=emoji_font, fill=(0, 0, 0, 60))
-        draw.text((e_x, e_y), emoji, font=emoji_font, fill=(255, 255, 255, 200))
+        # شريط علوي
+        draw.rectangle([0,0,W,3], fill=(*accent,180))
 
-        # 6. نوع المحتوى فوق الإيموجي
-        type_font = _get_font(32)
-        type_text = f"[ {content_type} ]"
-        t_bbox    = draw.textbbox((0, 0), type_text, font=type_font)
-        t_w       = t_bbox[2] - t_bbox[0]
-        t_x       = (W - t_w) // 2 - t_bbox[0]
-        draw.text((t_x, e_y - 55), type_text,
-                  font=type_font, fill=(*accent, 220))
+        # توهج خلف الأيقونة
+        icon_cx, icon_cy, icon_size = W//2, H//2-40, 120
+        for r in range(icon_size, icon_size-40, -8):
+            draw.ellipse([icon_cx-r,icon_cy-r,icon_cx+r,icon_cy+r],
+                         fill=(*accent,int(30*(icon_size-r)/40)))
 
-        # 7. خط فاصل
-        line_y = e_y + e_h + 25
-        line_w = 300
-        draw.rectangle(
-            [(W-line_w)//2, line_y, (W+line_w)//2, line_y+3],
-            fill=(*accent, 180)
-        )
+        # الأيقونة الهندسية
+        _draw_icon(draw, icon_cx, icon_cy, icon_size, design["icon"], accent)
 
-        # 8. الموضوع أسفل الإيموجي
-        topic_font = _get_font(38)
-        topic_text = topic
-        max_w      = W - 120
+        # نوع المحتوى
+        type_font = _get_font(30)
+        type_text = f"— {content_type} —"
+        tb = draw.textbbox((0,0), type_text, font=type_font)
+        tx = (W-(tb[2]-tb[0]))//2 - tb[0]
+        draw.text((tx, icon_cy-icon_size-45), type_text,
+                  font=type_font, fill=(*accent,200))
+
+        # خط فاصل
+        line_y = icon_cy+icon_size+30
+        draw.rectangle([(W-400)//2, line_y, (W+400)//2, line_y+2],
+                       fill=(*accent,150))
+
+        # الموضوع
+        topic_font = _get_font(42)
+        t = topic
         while True:
-            tb = draw.textbbox((0, 0), topic_text, font=topic_font)
-            if tb[2] - tb[0] <= max_w or len(topic_text) < 10:
-                break
-            topic_text = topic_text[:-4] + "..."
-        tb  = draw.textbbox((0, 0), topic_text, font=topic_font)
-        t_w = tb[2] - tb[0]
-        t_x = (W - t_w) // 2 - tb[0]
-        t_y = line_y + 20
-        draw.text((t_x+2, t_y+2), topic_text, font=topic_font, fill=(0, 0, 0, 100))
-        draw.text((t_x, t_y),     topic_text, font=topic_font, fill="white")
+            tb = draw.textbbox((0,0), t, font=topic_font)
+            if tb[2]-tb[0] <= W-140 or len(t)<10: break
+            t = t[:-4]+"..."
+        tb  = draw.textbbox((0,0), t, font=topic_font)
+        t_x = (W-(tb[2]-tb[0]))//2 - tb[0]
+        t_y = line_y+18
+        draw.rectangle([t_x-20,t_y-8,t_x+(tb[2]-tb[0])+20,t_y+(tb[3]-tb[1])+8],
+                       fill=(0,0,0,60))
+        draw.text((t_x+2,t_y+2), t, font=topic_font, fill=(0,0,0,90))
+        draw.text((t_x,t_y),     t, font=topic_font, fill="white")
 
-        # 9. Watermark أسفل يسار
-        wm_font = _get_font(28)
-        wm_text = f"🤖 {page_name}"
-        wm_bbox = draw.textbbox((0, 0), wm_text, font=wm_font)
-        wm_w    = wm_bbox[2] - wm_bbox[0]
-        wm_h    = wm_bbox[3] - wm_bbox[1]
-        padding = 12
-        margin  = 20
-        wm_x    = margin
-        wm_y    = H - wm_h - padding * 2 - margin
-        draw.rounded_rectangle(
-            [wm_x-padding, wm_y-padding,
-             wm_x+wm_w+padding, wm_y+wm_h+padding],
-            radius=8, fill=(0, 0, 0, 160)
-        )
-        draw.text((wm_x, wm_y), wm_text, font=wm_font,
-                  fill=(255, 255, 255, 230))
+        # Watermark
+        wm_font = _get_font(26)
+        wm_text = f"| {page_name}"
+        wm_bbox = draw.textbbox((0,0), wm_text, font=wm_font)
+        wm_w    = wm_bbox[2]-wm_bbox[0]
+        wm_h    = wm_bbox[3]-wm_bbox[1]
+        pad,mx  = 10, 20
+        wx      = mx
+        wy      = H-wm_h-pad*2-mx
+        draw.rounded_rectangle([wx-pad,wy-pad,wx+wm_w+pad*3,wy+wm_h+pad],
+                                radius=6, fill=(0,0,0,170))
+        draw.ellipse([wx,wy+wm_h//2-5,wx+10,wy+wm_h//2+5], fill=accent)
+        draw.text((wx+14,wy), wm_text, font=wm_font, fill=(255,255,255,230))
 
-        # حفظ الصورة
-        img = img.convert("RGB")
-        img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
-        logger.info(f"✅ تم إنشاء صورة Pillow: {content_type}")
+        img.convert("RGB").save(TEMP_IMAGE, "JPEG", quality=92, optimize=True)
+        logger.info(f"✅ صورة Pillow v2: {content_type}")
         return True
 
     except Exception as e:
@@ -765,12 +747,7 @@ def validate_image() -> bool:
 # الدالة الرئيسية لجلب الصورة
 # =========================
 def get_image(content_type: str, topic: str, used_images: set) -> bool:
-    """
-    ✅ نظام الصور الجديد:
-    1. Pillow: صورة مخصصة لكل نوع (مجاني + سريع + لا API)
-    2. مكتبة محلية: آخر خيار
-    """
-    # 1️⃣ Pillow (الأفضل — مخصصة ومجانية)
+    # 1️⃣ Pillow v2 (مجاني + سريع + مخصص)
     if create_post_image(content_type, topic) and validate_image():
         return True
 
@@ -784,7 +761,7 @@ def get_image(content_type: str, topic: str, used_images: set) -> bool:
             img = Image.open(io.BytesIO(res.content)).convert("RGB")
             if img.width > MAX_IMAGE_WIDTH:
                 ratio = MAX_IMAGE_WIDTH / img.width
-                img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+                img   = img.resize((MAX_IMAGE_WIDTH, int(img.height*ratio)), Image.LANCZOS)
             img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
             if validate_image():
                 logger.info(f"✅ صورة احتياطية ({content_type})")
@@ -794,6 +771,7 @@ def get_image(content_type: str, topic: str, used_images: set) -> bool:
 
     logger.error("❌ فشل تحميل أي صورة")
     return False
+
 
 
 # =========================
