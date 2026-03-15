@@ -528,22 +528,229 @@ def generate_post(content: dict) -> str | None:
 # =========================
 # جلب الصورة
 # =========================
-def download_and_resize_image(url: str) -> bool:
+
+# =========================
+# تصاميم الصور لكل نوع محتوى
+# =========================
+DESIGNS = {
+    "حيلة تقنية": {
+        "bg": [(10, 15, 40), (20, 80, 160)],
+        "accent": (0, 180, 255),
+        "emoji": "💡",
+        "pattern": "circuit",
+    },
+    "تطبيق مفيد": {
+        "bg": [(20, 10, 50), (100, 30, 150)],
+        "accent": (180, 80, 255),
+        "emoji": "📱",
+        "pattern": "dots",
+    },
+    "أداة AI": {
+        "bg": [(5, 20, 35), (10, 100, 120)],
+        "accent": (0, 220, 200),
+        "emoji": "🤖",
+        "pattern": "grid",
+    },
+    "تحذير أمني": {
+        "bg": [(35, 5, 5), (120, 20, 20)],
+        "accent": (255, 60, 60),
+        "emoji": "🔒",
+        "pattern": "lines",
+    },
+    "مقارنة تقنية": {
+        "bg": [(10, 25, 10), (20, 100, 60)],
+        "accent": (0, 220, 100),
+        "emoji": "⚔️",
+        "pattern": "split",
+    },
+    "خطوات عملية": {
+        "bg": [(25, 20, 5), (120, 90, 10)],
+        "accent": (255, 200, 0),
+        "emoji": "📋",
+        "pattern": "dots",
+    },
+    "إحصائيات صادمة": {
+        "bg": [(5, 5, 35), (40, 20, 120)],
+        "accent": (100, 150, 255),
+        "emoji": "📊",
+        "pattern": "grid",
+    },
+    "سؤال تفاعلي": {
+        "bg": [(30, 10, 30), (120, 40, 120)],
+        "accent": (255, 100, 200),
+        "emoji": "🗳️",
+        "pattern": "circles",
+    },
+    "نصيحة احترافية": {
+        "bg": [(20, 15, 5), (90, 65, 15)],
+        "accent": (220, 170, 50),
+        "emoji": "🎯",
+        "pattern": "lines",
+    },
+    "ترند تقني": {
+        "bg": [(5, 5, 5), (40, 5, 80)],
+        "accent": (150, 50, 255),
+        "emoji": "🔥",
+        "pattern": "circuit",
+    },
+}
+
+# =========================
+# أدوات مساعدة للصورة
+# =========================
+def _get_font(size: int) -> ImageFont.FreeTypeFont:
+    for fp in [
+        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]:
+        if Path(fp).exists():
+            try:
+                return ImageFont.truetype(fp, size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+def _draw_gradient(img: Image.Image, c1: tuple, c2: tuple) -> Image.Image:
+    W, H = img.size
+    draw = ImageDraw.Draw(img)
+    for x in range(W):
+        r = int(c1[0] + (c2[0] - c1[0]) * x / W)
+        g = int(c1[1] + (c2[1] - c1[1]) * x / W)
+        b = int(c1[2] + (c2[2] - c1[2]) * x / W)
+        draw.line([(x, 0), (x, H)], fill=(r, g, b))
+    return img
+
+def _draw_pattern(draw, W: int, H: int, pattern: str, accent: tuple):
+    a15, a20, a30, a40 = (*accent, 15), (*accent, 20), (*accent, 30), (*accent, 40)
+    if pattern == "circuit":
+        for x in range(0, W, 80):
+            draw.line([(x, 0), (x, H)], fill=(*accent, 12), width=1)
+        for y in range(0, H, 80):
+            draw.line([(0, y), (W, y)], fill=(*accent, 12), width=1)
+        for x in range(0, W, 80):
+            for y in range(0, H, 80):
+                draw.ellipse([x-3, y-3, x+3, y+3], fill=(*accent, 35))
+    elif pattern == "dots":
+        for x in range(0, W, 50):
+            for y in range(0, H, 50):
+                r = 3 if (x + y) % 100 == 0 else 2
+                draw.ellipse([x-r, y-r, x+r, y+r], fill=a30)
+    elif pattern == "grid":
+        for x in range(0, W, 60):
+            draw.line([(x, 0), (x, H)], fill=(*accent, 10), width=1)
+        for y in range(0, H, 60):
+            draw.line([(0, y), (W, y)], fill=(*accent, 10), width=1)
+    elif pattern == "lines":
+        for i in range(0, W + H, 60):
+            draw.line([(i, 0), (0, i)], fill=(*accent, 12), width=1)
+    elif pattern == "circles":
+        cx, cy = W // 2, H // 2
+        for r in range(50, max(W, H), 80):
+            draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=a20, width=1)
+    elif pattern == "split":
+        draw.line([(W//2, 0), (W//2, H)], fill=(*accent, 25), width=2)
+        for x in range(0, W, 100):
+            draw.line([(x, 0), (x, H)], fill=(*accent, 8), width=1)
+
+# =========================
+# ✅ توليد الصورة بـ Pillow
+# =========================
+def create_post_image(content_type: str, topic: str,
+                      page_name: str = "تقنية بالدارجة") -> bool:
+    """
+    ينشئ صورة احترافية مخصصة لكل نوع محتوى بـ Pillow.
+    لا يعتمد على أي API خارجي — مجاني 100% وسريع.
+    """
     try:
-        res = SESSION.get(url, timeout=30)
-        if res.status_code != 200 or "image" not in res.headers.get("Content-Type", ""):
-            return False
-        img = Image.open(io.BytesIO(res.content))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        if img.width > MAX_IMAGE_WIDTH:
-            ratio = MAX_IMAGE_WIDTH / img.width
-            img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
-        img = add_watermark(img)
-        img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
+        W, H   = 1200, 630
+        design = DESIGNS.get(content_type, DESIGNS["حيلة تقنية"])
+        accent = design["accent"]
+
+        # 1. خلفية متدرجة
+        img  = Image.new("RGB", (W, H))
+        img  = _draw_gradient(img, design["bg"][0], design["bg"][1])
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        # 2. زخارف الخلفية
+        _draw_pattern(draw, W, H, design["pattern"], accent)
+
+        # 3. شريط لون على اليسار
+        draw.rectangle([0, 0, 8, H], fill=(*accent, 255))
+
+        # 4. دائرة كبيرة شفافة (يمين)
+        draw.ellipse([W//2, -H//3, W+H//2, H+H//3], fill=(*accent, 8))
+
+        # 5. إيموجي كبير في المنتصف
+        emoji_font = _get_font(160)
+        emoji      = design["emoji"]
+        e_bbox     = draw.textbbox((0, 0), emoji, font=emoji_font)
+        e_w  = e_bbox[2] - e_bbox[0]
+        e_h  = e_bbox[3] - e_bbox[1]
+        e_x  = (W - e_w) // 2 - e_bbox[0]
+        e_y  = H // 2 - e_h // 2 - e_bbox[1] - 40
+        draw.text((e_x+4, e_y+4), emoji, font=emoji_font, fill=(0, 0, 0, 60))
+        draw.text((e_x, e_y), emoji, font=emoji_font, fill=(255, 255, 255, 200))
+
+        # 6. نوع المحتوى فوق الإيموجي
+        type_font = _get_font(32)
+        type_text = f"[ {content_type} ]"
+        t_bbox    = draw.textbbox((0, 0), type_text, font=type_font)
+        t_w       = t_bbox[2] - t_bbox[0]
+        t_x       = (W - t_w) // 2 - t_bbox[0]
+        draw.text((t_x, e_y - 55), type_text,
+                  font=type_font, fill=(*accent, 220))
+
+        # 7. خط فاصل
+        line_y = e_y + e_h + 25
+        line_w = 300
+        draw.rectangle(
+            [(W-line_w)//2, line_y, (W+line_w)//2, line_y+3],
+            fill=(*accent, 180)
+        )
+
+        # 8. الموضوع أسفل الإيموجي
+        topic_font = _get_font(38)
+        topic_text = topic
+        max_w      = W - 120
+        while True:
+            tb = draw.textbbox((0, 0), topic_text, font=topic_font)
+            if tb[2] - tb[0] <= max_w or len(topic_text) < 10:
+                break
+            topic_text = topic_text[:-4] + "..."
+        tb  = draw.textbbox((0, 0), topic_text, font=topic_font)
+        t_w = tb[2] - tb[0]
+        t_x = (W - t_w) // 2 - tb[0]
+        t_y = line_y + 20
+        draw.text((t_x+2, t_y+2), topic_text, font=topic_font, fill=(0, 0, 0, 100))
+        draw.text((t_x, t_y),     topic_text, font=topic_font, fill="white")
+
+        # 9. Watermark أسفل يسار
+        wm_font = _get_font(28)
+        wm_text = f"🤖 {page_name}"
+        wm_bbox = draw.textbbox((0, 0), wm_text, font=wm_font)
+        wm_w    = wm_bbox[2] - wm_bbox[0]
+        wm_h    = wm_bbox[3] - wm_bbox[1]
+        padding = 12
+        margin  = 20
+        wm_x    = margin
+        wm_y    = H - wm_h - padding * 2 - margin
+        draw.rounded_rectangle(
+            [wm_x-padding, wm_y-padding,
+             wm_x+wm_w+padding, wm_y+wm_h+padding],
+            radius=8, fill=(0, 0, 0, 160)
+        )
+        draw.text((wm_x, wm_y), wm_text, font=wm_font,
+                  fill=(255, 255, 255, 230))
+
+        # حفظ الصورة
+        img = img.convert("RGB")
+        img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
+        logger.info(f"✅ تم إنشاء صورة Pillow: {content_type}")
         return True
+
     except Exception as e:
-        logger.error(f"خطأ في تحميل الصورة: {e}")
+        logger.error(f"❌ خطأ في إنشاء الصورة: {e}")
         return False
 
 def validate_image() -> bool:
@@ -554,389 +761,40 @@ def validate_image() -> bool:
     except Exception:
         return False
 
-
 # =========================
-# إضافة Watermark للصورة
+# الدالة الرئيسية لجلب الصورة
 # =========================
-def add_watermark(img: Image.Image, text: str = "تقنية بالدارجة") -> Image.Image:
-    """
-    يضيف Watermark احترافي للصورة:
-    - نص الصفحة في الركن السفلي الأيسر
-    - خلفية شبه شفافة خلف النص
-    - يتكيف مع حجم الصورة تلقائياً
-    """
-    try:
-        img      = img.convert("RGBA")
-        W, H     = img.size
-        overlay  = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        draw     = ImageDraw.Draw(overlay)
-
-        # حجم الخط بناءً على عرض الصورة
-        font_size = max(22, W // 45)
-
-        # البحث عن أفضل font متاح
-        font_paths = [
-            "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        ]
-        font = ImageFont.load_default()
-        for fp in font_paths:
-            if Path(fp).exists():
-                try:
-                    font = ImageFont.truetype(fp, font_size)
-                    break
-                except Exception:
-                    continue
-
-        # حساب حجم النص
-        bbox    = draw.textbbox((0, 0), text, font=font)
-        txt_w   = bbox[2] - bbox[0]
-        txt_h   = bbox[3] - bbox[1]
-        padding = 12
-
-        # موقع Watermark: ركن أسفل يسار
-        margin = 20
-        x      = margin
-        y      = H - txt_h - padding * 2 - margin
-
-        # خلفية داكنة شفافة خلف النص
-        draw.rounded_rectangle(
-            [x - padding, y - padding,
-             x + txt_w + padding, y + txt_h + padding],
-            radius = 8,
-            fill   = (0, 0, 0, 160),
-        )
-        # 🤖 إيموجي الصفحة قبل النص
-        full_text  = "🤖 " + text
-        # حساب الحجم الكامل للنص مع الإيموجي
-        full_bbox  = draw.textbbox((0, 0), full_text, font=font)
-        full_w     = full_bbox[2] - full_bbox[0]
-        # تحديث عرض الخلفية ليناسب النص الكامل
-        draw.rounded_rectangle(
-            [x - padding, y - padding,
-             x + full_w + padding, y + txt_h + padding],
-            radius = 8,
-            fill   = (0, 0, 0, 160),
-        )
-        # رسم النص مع الإيموجي
-        draw.text(
-            (x, y),
-            full_text,
-            font = font,
-            fill = (255, 255, 255, 230),
-        )
-
-        # دمج الـ overlay مع الصورة الأصلية
-        result = Image.alpha_composite(img, overlay).convert("RGB")
-        logger.info(f"✅ تم إضافة Watermark")
-        return result
-
-    except Exception as e:
-        logger.warning(f"⚠️ فشل إضافة Watermark: {e}")
-        return img.convert("RGB")
-
-
-
-# =========================
-# توليد كلمات بحث ذكية بـ Gemini
-# =========================
-def generate_search_query(content_type: str, topic: str) -> str:
-    """
-    يستخدم Gemini لتوليد كلمة بحث إنجليزية مخصصة للموضوع
-    تعطي نتائج Pexels أكثر صلة بالمحتوى
-    """
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    )
-    prompt = f"""
-You are a Pexels image search expert.
-Given this Arabic tech post topic: "{topic}" (type: {content_type})
-
-Generate ONE short English search query (2-4 words maximum) for Pexels that will find 
-a highly relevant, professional, visually appealing image for this topic.
-
-Rules:
-- English only
-- 2 to 4 words maximum
-- Concrete and visual (not abstract)
-- Professional photography style
-- No people faces if possible
-
-Examples:
-- "حيل مخفية في iPhone" → "iphone screen close up"
-- "أدوات AI مجانية أفضل من ChatGPT" → "artificial intelligence robot"
-- "تطبيقات VPN مجانية وموثوقة" → "vpn security network shield"
-- "إعدادات الخصوصية في هاتفك" → "smartphone privacy settings"
-- "كيف تبدأ تتعلم البرمجة" → "coding laptop programming"
-
-Reply with ONLY the search query, nothing else.
-"""
-    try:
-        res = SESSION.post(
-            url,
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-            headers={"Content-Type": "application/json"},
-            timeout=15,
-        )
-        if res.status_code == 200:
-            query = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            # تنظيف الجواب
-            query = query.strip('"').strip("'").strip().lower()
-            query = re.sub(r'[^\w\s]', '', query)[:50]
-            if query and len(query) > 3:
-                logger.info(f"🧠 Gemini اقترح: '{query}'")
-                return query
-    except Exception as e:
-        logger.warning(f"⚠️ فشل توليد كلمة البحث: {e}")
-
-    # fallback: كلمات افتراضية
-    return PEXELS_QUERIES.get(content_type, ["technology"])[0]
-
-
-# =========================
-# قاموس كلمات البحث الذكية لـ Pexels
-# كل نوع محتوى عنده 5 كلمات بحث مختلفة
-# يتم اختيار واحدة عشوائياً كل مرة
-# =========================
-# =========================
-# توليد صورة بـ Gemini Image (الصحيح)
-# =========================
-def generate_image_with_gemini(content_type: str, topic: str) -> bool:
-    IMAGE_STYLE = {
-        "حيلة تقنية":      "modern tech smartphone with glowing blue interface, dark background, professional social media",
-        "تطبيق مفيد":      "colorful mobile app on smartphone screen, material design, vibrant clean background",
-        "أداة AI":          "futuristic AI neural network visualization, purple blue gradient, glowing particles",
-        "تحذير أمني":      "cybersecurity red warning, dark background, digital lock shield glowing",
-        "مقارنة تقنية":    "two modern smartphones side by side, clean white studio background, professional",
-        "خطوات عملية":     "person learning on laptop, clean desk, warm lighting, productive workspace",
-        "إحصائيات صادمة":  "colorful data charts on screen, analytics dashboard, blue orange colors",
-        "سؤال تفاعلي":     "diverse group using smartphones, social interaction, warm modern atmosphere",
-        "نصيحة احترافية":  "professional clean desk setup, laptop notebook coffee, warm productive lighting",
-        "ترند تقني":        "futuristic city with holographic technology, neon blue glow, innovation",
-    }
-    style = IMAGE_STYLE.get(content_type, "modern technology concept, professional, clean, social media")
-    prompt = (
-        f"Professional social media image for tech post about: {topic}. "
-        f"Style: {style}. No text in image. Wide landscape 16:9. Ultra high quality."
-    )
-
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-image-preview:generateContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE"]}
-    }
-
-    try:
-        logger.info("🎨 توليد صورة بـ Gemini Image...")
-        res = SESSION.post(url, json=payload,
-                          headers={"Content-Type": "application/json"},
-                          timeout=60)
-
-        if res.status_code == 429:
-            logger.warning("⚠️ Gemini Image: تجاوز الحد")
-            return False
-        if res.status_code in (400, 404):
-            logger.warning(f"⚠️ Gemini Image غير متاح: {res.status_code}")
-            return False
-
-        res.raise_for_status()
-        parts = res.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
-
-        for part in parts:
-            inline = part.get("inlineData", {})
-            if inline.get("data"):
-                img_bytes = base64.b64decode(inline["data"])
-                img = Image.open(io.BytesIO(img_bytes))
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-                if img.width > MAX_IMAGE_WIDTH:
-                    ratio = MAX_IMAGE_WIDTH / img.width
-                    img = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
-                img = add_watermark(img)
-                img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
-                logger.info(f"✅ Gemini Image: {img.width}x{img.height}")
-                return True
-
-        logger.warning("⚠️ Gemini Image: لا توجد صورة في الرد")
-        return False
-
-    except Exception as e:
-        logger.error(f"❌ Gemini Image Error: {e}")
-        return False
-
-
-PEXELS_QUERIES = {
-    "حيلة تقنية": [
-        "smartphone hidden features",
-        "phone tips tricks technology",
-        "mobile technology lifestyle",
-        "tech gadgets close up",
-        "person using smartphone",
-    ],
-    "تطبيق مفيد": [
-        "mobile app interface",
-        "productivity smartphone app",
-        "phone screen colorful apps",
-        "person using phone apps",
-        "technology mobile productivity",
-    ],
-    "أداة AI": [
-        "artificial intelligence technology",
-        "machine learning digital",
-        "futuristic AI robot technology",
-        "data science computer",
-        "neural network technology glow",
-    ],
-    "تحذير أمني": [
-        "cybersecurity digital protection",
-        "data privacy internet security",
-        "hacker cyber attack dark",
-        "password security lock",
-        "digital security shield",
-    ],
-    "مقارنة تقنية": [
-        "smartphone comparison technology",
-        "two phones side by side",
-        "tech gadgets review",
-        "apple vs android phone",
-        "technology devices comparison",
-    ],
-    "خطوات عملية": [
-        "step by step learning technology",
-        "person learning coding laptop",
-        "online course digital skills",
-        "tutorial technology screen",
-        "professional learning computer",
-    ],
-    "إحصائيات صادمة": [
-        "data analytics dashboard",
-        "business charts statistics",
-        "digital infographic screen",
-        "data visualization technology",
-        "statistics graphs technology",
-    ],
-    "سؤال تفاعلي": [
-        "people using smartphones together",
-        "social media community interaction",
-        "group people technology",
-        "friends phones social",
-        "community digital interaction",
-    ],
-    "نصيحة احترافية": [
-        "professional workspace desk setup",
-        "productivity laptop notebook",
-        "business professional technology",
-        "clean modern desk computer",
-        "expert working technology",
-    ],
-    "ترند تقني": [
-        "future technology innovation",
-        "emerging technology digital",
-        "tech trend modern city",
-        "innovation startup technology",
-        "technology future concept",
-    ],
-}
-
 def get_image(content_type: str, topic: str, used_images: set) -> bool:
     """
-    ✅ نظام صور ذكي بـ Pexels فقط:
-    1. يبحث بكلمات إنجليزية مخصصة لكل نوع محتوى
-    2. يجرب 3 كلمات بحث مختلفة إذا فشلت الأولى
-    3. يتجنب الصور المستخدمة مسبقاً
-    4. يفضل الصور الأفقية عالية الجودة
-    5. مكتبة محلية كآخر خيار
+    ✅ نظام الصور الجديد:
+    1. Pillow: صورة مخصصة لكل نوع (مجاني + سريع + لا API)
+    2. مكتبة محلية: آخر خيار
     """
-    # 1️⃣ Gemini Image (إذا كان Pro متاحاً)
-    if GEMINI_API_KEY:
-        if generate_image_with_gemini(content_type, topic) and validate_image():
-            return True
-        logger.info("⚠️ Gemini Image فشل — جاري الانتقال لـ Pexels")
-
-    # 2️⃣ Pexels مع كلمات بحث ذكية من Gemini
-    if PEXELS_API_KEY:
-        # الكلمة الأولى: Gemini يولدها مخصصة للموضوع
-        smart_query   = generate_search_query(content_type, topic)
-        # الكلمات الاحتياطية: من القاموس الثابت
-        fallback_queries = PEXELS_QUERIES.get(content_type, ["technology innovation"])
-        random.shuffle(fallback_queries)
-        all_queries = [smart_query] + fallback_queries[:2]
-
-        for i, search_query in enumerate(all_queries):
-            try:
-                logger.info(f"🔍 Pexels [{i+1}/3]: '{search_query}'")
-                res = SESSION.get(
-                    "https://api.pexels.com/v1/search",
-                    headers={"Authorization": PEXELS_API_KEY},
-                    params={
-                        "query":       search_query,
-                        "per_page":    20,          # أكثر خيارات
-                        "orientation": "landscape",
-                        "size":        "large",
-                    },
-                    timeout=15,
-                )
-                res.raise_for_status()
-                photos    = res.json().get("photos", [])
-                new_photos = [p for p in photos if p["src"]["large2x"] not in used_images]
-                pool       = new_photos if new_photos else photos
-
-                if pool:
-                    # اختيار من أفضل 5 صور (الأولى في النتائج = الأكثر صلة)
-                    chosen = random.choice(pool[:5])
-                    url    = chosen["src"]["large2x"]
-                    if download_and_resize_image(url) and validate_image():
-                        logger.info(f"✅ صورة من Pexels (ID: {chosen['id']})")
-                        used_images.add(url)
-                        save_used_images(used_images)
-                        return True
-
-            except Exception as e:
-                logger.error(f"❌ Pexels Error [{i+1}]: {e}")
-
-    # 2️⃣ Unsplash
-    if UNSPLASH_ACCESS_KEY:
-        try:
-            logger.info(f"🔍 [2/3] Unsplash: '{search_query}'")
-            res = SESSION.get(
-                "https://api.unsplash.com/search/photos",
-                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-                params={
-                    "query":          search_query,
-                    "per_page":       15,
-                    "orientation":    "landscape",
-                    "content_filter": "high",
-                },
-                timeout=15,
-            )
-            results   = res.json().get("results", [])
-            new_photos = [p for p in results if p["urls"]["regular"] not in used_images]
-            if new_photos or results:
-                chosen = random.choice(new_photos if new_photos else results)
-                url    = chosen["urls"]["regular"]
-                if download_and_resize_image(url) and validate_image():
-                    logger.info("✅ صورة من Unsplash")
-                    used_images.add(url)
-                    save_used_images(used_images)
-                    return True
-        except Exception as e:
-            logger.error(f"❌ Unsplash Error: {e}")
-
-    # 3️⃣ مكتبة محلية احتياطية
-    logger.info("🖼️  [3/3] صورة احتياطية محلية")
-    backup_list = IMAGE_LIBRARY.get(content_type, list(IMAGE_LIBRARY.values())[0])
-    backup      = random.choice(backup_list)
-    if download_and_resize_image(backup) and validate_image():
-        logger.info(f"✅ صورة احتياطية ({content_type})")
+    # 1️⃣ Pillow (الأفضل — مخصصة ومجانية)
+    if create_post_image(content_type, topic) and validate_image():
         return True
+
+    # 2️⃣ مكتبة محلية احتياطية
+    logger.warning("⚠️ فشل Pillow — استخدام صورة احتياطية")
+    backup_list = IMAGE_LIBRARY.get(content_type, list(IMAGE_LIBRARY.values())[0])
+    backup_url  = random.choice(backup_list)
+    try:
+        res = SESSION.get(backup_url, timeout=20)
+        if res.status_code == 200:
+            img = Image.open(io.BytesIO(res.content)).convert("RGB")
+            if img.width > MAX_IMAGE_WIDTH:
+                ratio = MAX_IMAGE_WIDTH / img.width
+                img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+            img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
+            if validate_image():
+                logger.info(f"✅ صورة احتياطية ({content_type})")
+                return True
+    except Exception as e:
+        logger.error(f"❌ فشل الصورة الاحتياطية: {e}")
 
     logger.error("❌ فشل تحميل أي صورة")
     return False
+
 
 # =========================
 # النشر على فيسبوك
