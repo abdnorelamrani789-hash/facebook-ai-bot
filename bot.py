@@ -683,7 +683,7 @@ Reply with ONLY the search query, nothing else.
         if res.status_code == 200:
             query = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
             # تنظيف الجواب
-            query = query.strip('"'').strip().lower()
+            query = query.strip('"').strip("'").strip().lower()
             query = re.sub(r'[^\w\s]', '', query)[:50]
             if query and len(query) > 3:
                 logger.info(f"🧠 Gemini اقترح: '{query}'")
