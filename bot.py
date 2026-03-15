@@ -564,7 +564,7 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
     """
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
+        f"gemini-2.5-flash-image-preview:generateContent?key={GEMINI_API_KEY}"
     )
 
     # Prompt مصمم لصور السوشل ميديا
@@ -597,7 +597,11 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
                     "parts": [{"text": image_prompt}]
                 }],
                 "generationConfig": {
-                    "responseModalities": ["TEXT", "IMAGE"]
+                    "responseModalities": ["IMAGE"],
+                    "imageGenerationConfig": {
+                        "numberOfImages": 1,
+                        "aspectRatio": "16:9",
+                    }
                 }
             },
             headers={"Content-Type": "application/json"},
