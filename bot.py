@@ -553,63 +553,53 @@ def validate_image() -> bool:
     except Exception:
         return False
 
+
 # =========================
-# ✅ توليد صورة مخصصة بـ Gemini Image
-# نفس GEMINI_API_KEY — 500 صورة/يوم مجاناً
+# قاموس كلمات البحث الذكية لـ Pexels
+# كل نوع محتوى عنده 5 كلمات بحث مختلفة
+# يتم اختيار واحدة عشوائياً كل مرة
+# =========================
+# =========================
+# توليد صورة بـ Gemini Image (الصحيح)
 # =========================
 def generate_image_with_gemini(content_type: str, topic: str) -> bool:
-    """
-    يولد صورة مخصصة للمنشور باستخدام Gemini 2.5 Flash Image.
-    الصورة تعكس موضوع المنشور بالضبط — أفضل من Pexels.
-    """
+    IMAGE_STYLE = {
+        "حيلة تقنية":      "modern tech smartphone with glowing blue interface, dark background, professional social media",
+        "تطبيق مفيد":      "colorful mobile app on smartphone screen, material design, vibrant clean background",
+        "أداة AI":          "futuristic AI neural network visualization, purple blue gradient, glowing particles",
+        "تحذير أمني":      "cybersecurity red warning, dark background, digital lock shield glowing",
+        "مقارنة تقنية":    "two modern smartphones side by side, clean white studio background, professional",
+        "خطوات عملية":     "person learning on laptop, clean desk, warm lighting, productive workspace",
+        "إحصائيات صادمة":  "colorful data charts on screen, analytics dashboard, blue orange colors",
+        "سؤال تفاعلي":     "diverse group using smartphones, social interaction, warm modern atmosphere",
+        "نصيحة احترافية":  "professional clean desk setup, laptop notebook coffee, warm productive lighting",
+        "ترند تقني":        "futuristic city with holographic technology, neon blue glow, innovation",
+    }
+    style = IMAGE_STYLE.get(content_type, "modern technology concept, professional, clean, social media")
+    prompt = (
+        f"Professional social media image for tech post about: {topic}. "
+        f"Style: {style}. No text in image. Wide landscape 16:9. Ultra high quality."
+    )
+
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
+        f"gemini-2.5-flash-image-preview:generateContent?key={GEMINI_API_KEY}"
     )
-
-    # Prompt مصمم لصور السوشل ميديا
-    IMAGE_STYLE = {
-        "حيلة تقنية":      "modern tech flat design, blue and cyan colors, clean minimal style, smartphone or laptop, professional social media",
-        "تطبيق مفيد":      "colorful app interface mockup, material design, smartphone screen, vibrant colors, clean background",
-        "أداة AI":          "futuristic AI concept, purple and blue gradient, neural network visualization, glowing elements, digital art",
-        "تحذير أمني":      "cybersecurity concept, red and dark colors, shield or lock icon, warning atmosphere, professional design",
-        "مقارنة تقنية":    "two devices side by side comparison, clean white background, modern tech photography, professional studio",
-        "خطوات عملية":     "step by step infographic style, clean colorful design, checklist, productivity concept, modern flat design",
-        "إحصائيات صادمة":  "data visualization concept, colorful charts and graphs, modern infographic style, blue and orange colors",
-        "سؤال تفاعلي":     "people using smartphones, diverse group, social interaction, warm colors, modern lifestyle photography",
-        "نصيحة احترافية":  "professional workspace, laptop and notebook, clean desk, warm lighting, productivity and success concept",
-        "ترند تقني":        "futuristic technology concept, holographic display, glowing neon, modern city, innovation atmosphere",
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["IMAGE"]}
     }
-    style = IMAGE_STYLE.get(content_type, "modern technology concept, professional, clean design, social media post")
-
-    image_prompt = (
-        f"Create a professional social media image for a tech post about: {topic}. "
-        f"Style: {style}. "
-        f"No text in the image. Wide format 16:9. High quality."
-    )
 
     try:
-        logger.info(f"🎨 توليد صورة بـ Gemini Image...")
-        res = SESSION.post(
-            url,
-            json={
-                "contents": [{
-                    "parts": [{"text": image_prompt}]
-                }],
-                "generationConfig": {
-                    "responseModalities": ["IMAGE"]
-                }
-            },
-            headers={"Content-Type": "application/json"},
-            timeout=60,
-        )
+        logger.info("🎨 توليد صورة بـ Gemini Image...")
+        res = SESSION.post(url, json=payload,
+                          headers={"Content-Type": "application/json"},
+                          timeout=60)
 
         if res.status_code == 429:
-            logger.warning("⚠️ Gemini Image: تجاوز الحد — جاري الانتظار...")
-            time.sleep(30)
+            logger.warning("⚠️ Gemini Image: تجاوز الحد")
             return False
-
-        if res.status_code in (404, 400):
+        if res.status_code in (400, 404):
             logger.warning(f"⚠️ Gemini Image غير متاح: {res.status_code}")
             return False
 
@@ -617,17 +607,17 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
         parts = res.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
 
         for part in parts:
-            if "inlineData" in part:
-                img_data  = part["inlineData"]["data"]
-                img_bytes = base64.b64decode(img_data)
-                img       = Image.open(io.BytesIO(img_bytes))
+            inline = part.get("inlineData", {})
+            if inline.get("data"):
+                img_bytes = base64.b64decode(inline["data"])
+                img = Image.open(io.BytesIO(img_bytes))
                 if img.mode in ("RGBA", "P"):
                     img = img.convert("RGB")
                 if img.width > MAX_IMAGE_WIDTH:
                     ratio = MAX_IMAGE_WIDTH / img.width
-                    img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+                    img = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
                 img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
-                logger.info(f"✅ تم توليد صورة بـ Gemini Image ({img.width}x{img.height})")
+                logger.info(f"✅ Gemini Image: {img.width}x{img.height}")
                 return True
 
         logger.warning("⚠️ Gemini Image: لا توجد صورة في الرد")
@@ -638,49 +628,130 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
         return False
 
 
+PEXELS_QUERIES = {
+    "حيلة تقنية": [
+        "smartphone hidden features",
+        "phone tips tricks technology",
+        "mobile technology lifestyle",
+        "tech gadgets close up",
+        "person using smartphone",
+    ],
+    "تطبيق مفيد": [
+        "mobile app interface",
+        "productivity smartphone app",
+        "phone screen colorful apps",
+        "person using phone apps",
+        "technology mobile productivity",
+    ],
+    "أداة AI": [
+        "artificial intelligence technology",
+        "machine learning digital",
+        "futuristic AI robot technology",
+        "data science computer",
+        "neural network technology glow",
+    ],
+    "تحذير أمني": [
+        "cybersecurity digital protection",
+        "data privacy internet security",
+        "hacker cyber attack dark",
+        "password security lock",
+        "digital security shield",
+    ],
+    "مقارنة تقنية": [
+        "smartphone comparison technology",
+        "two phones side by side",
+        "tech gadgets review",
+        "apple vs android phone",
+        "technology devices comparison",
+    ],
+    "خطوات عملية": [
+        "step by step learning technology",
+        "person learning coding laptop",
+        "online course digital skills",
+        "tutorial technology screen",
+        "professional learning computer",
+    ],
+    "إحصائيات صادمة": [
+        "data analytics dashboard",
+        "business charts statistics",
+        "digital infographic screen",
+        "data visualization technology",
+        "statistics graphs technology",
+    ],
+    "سؤال تفاعلي": [
+        "people using smartphones together",
+        "social media community interaction",
+        "group people technology",
+        "friends phones social",
+        "community digital interaction",
+    ],
+    "نصيحة احترافية": [
+        "professional workspace desk setup",
+        "productivity laptop notebook",
+        "business professional technology",
+        "clean modern desk computer",
+        "expert working technology",
+    ],
+    "ترند تقني": [
+        "future technology innovation",
+        "emerging technology digital",
+        "tech trend modern city",
+        "innovation startup technology",
+        "technology future concept",
+    ],
+}
+
 def get_image(content_type: str, topic: str, used_images: set) -> bool:
     """
-    يجلب صورة مناسبة للمحتوى:
-    1. ✅ Gemini Image (مخصصة ومولدة بـ AI)
-    2. Pexels API (احتياطي)
-    3. Unsplash API (احتياطي)
-    4. مكتبة محلية (آخر خيار)
+    ✅ نظام صور ذكي بـ Pexels فقط:
+    1. يبحث بكلمات إنجليزية مخصصة لكل نوع محتوى
+    2. يجرب 3 كلمات بحث مختلفة إذا فشلت الأولى
+    3. يتجنب الصور المستخدمة مسبقاً
+    4. يفضل الصور الأفقية عالية الجودة
+    5. مكتبة محلية كآخر خيار
     """
-    # كلمات بحث من الموضوع
-    search_query = " ".join(topic.split()[:4])
+    queries = PEXELS_QUERIES.get(content_type, ["technology innovation", "digital tech"])
+    random.shuffle(queries)  # خلط الترتيب كل مرة
 
-    # 1️⃣ Gemini Image (الأفضل — مخصصة)
+    # 1️⃣ Gemini Image (إذا كان Pro متاحاً)
     if GEMINI_API_KEY:
         if generate_image_with_gemini(content_type, topic) and validate_image():
             return True
         logger.info("⚠️ Gemini Image فشل — جاري الانتقال لـ Pexels")
 
-    # 2️⃣ Pexels
+    # 2️⃣ Pexels — يجرب 3 كلمات بحث مختلفة
     if PEXELS_API_KEY:
-        try:
-            logger.info(f"🔍 [1/3] Pexels: '{search_query}'")
-            res = SESSION.get(
-                "https://api.pexels.com/v1/search",
-                headers={"Authorization": PEXELS_API_KEY},
-                params={
-                    "query":       search_query,
-                    "per_page":    15,
-                    "orientation": "landscape",
-                    "size":        "large",
-                },
-                timeout=15,
-            )
-            photos    = res.json().get("photos", [])
-            new_photos = [p for p in photos if p["src"]["large2x"] not in used_images]
-            if new_photos or photos:
-                chosen = random.choice(new_photos if new_photos else photos)
-                if download_and_resize_image(chosen["src"]["large2x"]) and validate_image():
-                    logger.info("✅ صورة من Pexels")
-                    used_images.add(chosen["src"]["large2x"])
-                    save_used_images(used_images)
-                    return True
-        except Exception as e:
-            logger.error(f"❌ Pexels Error: {e}")
+        for i, search_query in enumerate(queries[:3]):
+            try:
+                logger.info(f"🔍 Pexels [{i+1}/3]: '{search_query}'")
+                res = SESSION.get(
+                    "https://api.pexels.com/v1/search",
+                    headers={"Authorization": PEXELS_API_KEY},
+                    params={
+                        "query":       search_query,
+                        "per_page":    20,          # أكثر خيارات
+                        "orientation": "landscape",
+                        "size":        "large",
+                    },
+                    timeout=15,
+                )
+                res.raise_for_status()
+                photos    = res.json().get("photos", [])
+                new_photos = [p for p in photos if p["src"]["large2x"] not in used_images]
+                pool       = new_photos if new_photos else photos
+
+                if pool:
+                    # اختيار من أفضل 5 صور (الأولى في النتائج = الأكثر صلة)
+                    chosen = random.choice(pool[:5])
+                    url    = chosen["src"]["large2x"]
+                    if download_and_resize_image(url) and validate_image():
+                        logger.info(f"✅ صورة من Pexels (ID: {chosen['id']})")
+                        used_images.add(url)
+                        save_used_images(used_images)
+                        return True
+
+            except Exception as e:
+                logger.error(f"❌ Pexels Error [{i+1}]: {e}")
 
     # 2️⃣ Unsplash
     if UNSPLASH_ACCESS_KEY:
