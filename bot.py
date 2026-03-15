@@ -443,7 +443,9 @@ def generate_post(content: dict) -> str | None:
 
 5. **الهاشتاجات (سطر منفصل):**
    - 5 هاشتاجات: 3 عربية + 2 إنجليزية
+   - ⚠️ كل هاشتاج لازم يبدأ بعلامة # بدون استثناء
    - مثال: #تقنية_بالدارجة #المغرب_التقني #نصائح_تقنية #TechTips #Technology
+   - ❌ ممنوع: تقنية_بالدارجة بدون # في البداية
 
 **قواعد إضافية:**
 - الطول: بين 1800 و 2500 حرف
@@ -478,6 +480,32 @@ def generate_post(content: dict) -> str | None:
             post_text = re.sub(r'\*\*(.*?)\*\*',  r'\1', post_text)
             post_text = re.sub(r'\*(.*?)\*',       r'\1', post_text)
             post_text = re.sub(r'#+\s*',           '',    post_text)
+
+
+            # ✅ إصلاح الهاشتاجات تلقائياً — نبحث عن سطر الهاشتاجات ونضيف #
+            def fix_hashtag_line(line: str) -> str:
+                # نتعرف على سطر الهاشتاجات: كلمات مفصولة بمسافات بدون نقطة أو فاصلة
+                stripped = line.strip()
+                if not stripped:
+                    return line
+                words = stripped.split()
+                # شروط سطر الهاشتاجات:
+                # 1. من 3 لـ 6 كلمات
+                # 2. كل كلمة تحتوي حروف أو أرقام أو _ فقط
+                # 3. على الأقل كلمة واحدة تحتوي _
+                if not (3 <= len(words) <= 6):
+                    return line
+                for w in words:
+                    if not re.match(r'^#?[\u0600-\u06FFa-zA-Z0-9_]+$', w):
+                        return line
+                if not any('_' in w for w in words):
+                    return line
+                if any(c in stripped for c in ['.', '!', '?', '؟', '،', ':']):
+                    return line
+                return ' '.join(w if w.startswith('#') else f'#{w}' for w in words)
+
+            post_text = '\n'.join(fix_hashtag_line(l) for l in post_text.split('\n'))
+
 
             # قطع ذكي إذا تجاوز الحد
             if len(post_text) > MAX_POST_LENGTH:
@@ -771,3 +799,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
