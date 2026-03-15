@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import base64
 import random
 import logging
 import requests
@@ -387,17 +388,103 @@ def validate_image() -> bool:
     except Exception:
         return False
 
+# =========================
+# ✅ توليد صورة مخصصة بـ Gemini Image
+# نفس GEMINI_API_KEY — 500 صورة/يوم مجاناً
+# =========================
+def generate_image_with_gemini(content_type: str, topic: str) -> bool:
+    """
+    يولد صورة مخصصة للمنشور باستخدام Gemini 2.5 Flash Image.
+    الصورة تعكس موضوع المنشور بالضبط — أفضل من Pexels.
+    """
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash-preview-05-20:generateContent?key={GEMINI_API_KEY}"
+    )
+
+    # Prompt مصمم لصور السوشل ميديا
+    IMAGE_STYLE = {
+        "حيلة تقنية":  "modern tech flat design, blue and cyan colors, clean minimal style, smartphone or laptop, professional social media post",
+        "تطبيق مفيد":  "colorful app interface mockup, material design, smartphone screen, vibrant colors, clean background",
+        "أداة AI":      "futuristic AI concept, purple and blue gradient, neural network visualization, glowing elements, digital art",
+        "تحذير أمني":  "cybersecurity concept, red and dark colors, shield or lock icon, warning atmosphere, professional design",
+    }
+    style = IMAGE_STYLE.get(content_type, "modern technology concept, professional, clean design, social media post")
+
+    image_prompt = (
+        f"Create a professional social media image for a tech post about: {topic}. "
+        f"Style: {style}. "
+        f"No text in the image. Wide format 16:9. High quality."
+    )
+
+    try:
+        logger.info(f"🎨 توليد صورة بـ Gemini Image...")
+        res = SESSION.post(
+            url,
+            json={
+                "contents": [{
+                    "parts": [{"text": image_prompt}]
+                }],
+                "generationConfig": {
+                    "responseModalities": ["TEXT", "IMAGE"]
+                }
+            },
+            headers={"Content-Type": "application/json"},
+            timeout=60,
+        )
+
+        if res.status_code == 429:
+            logger.warning("⚠️ Gemini Image: تجاوز الحد — جاري الانتظار...")
+            time.sleep(30)
+            return False
+
+        if res.status_code in (404, 400):
+            logger.warning(f"⚠️ Gemini Image غير متاح: {res.status_code}")
+            return False
+
+        res.raise_for_status()
+        parts = res.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+
+        for part in parts:
+            if "inlineData" in part:
+                img_data  = part["inlineData"]["data"]
+                img_bytes = base64.b64decode(img_data)
+                img       = Image.open(io.BytesIO(img_bytes))
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                if img.width > MAX_IMAGE_WIDTH:
+                    ratio = MAX_IMAGE_WIDTH / img.width
+                    img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+                img.save(TEMP_IMAGE, "JPEG", quality=90, optimize=True)
+                logger.info(f"✅ تم توليد صورة بـ Gemini Image ({img.width}x{img.height})")
+                return True
+
+        logger.warning("⚠️ Gemini Image: لا توجد صورة في الرد")
+        return False
+
+    except Exception as e:
+        logger.error(f"❌ Gemini Image Error: {e}")
+        return False
+
+
 def get_image(content_type: str, topic: str, used_images: set) -> bool:
     """
     يجلب صورة مناسبة للمحتوى:
-    1. Pexels API
-    2. Unsplash API
-    3. مكتبة محلية احتياطية
+    1. ✅ Gemini Image (مخصصة ومولدة بـ AI)
+    2. Pexels API (احتياطي)
+    3. Unsplash API (احتياطي)
+    4. مكتبة محلية (آخر خيار)
     """
     # كلمات بحث من الموضوع
     search_query = " ".join(topic.split()[:4])
 
-    # 1️⃣ Pexels
+    # 1️⃣ Gemini Image (الأفضل — مخصصة)
+    if GEMINI_API_KEY:
+        if generate_image_with_gemini(content_type, topic) and validate_image():
+            return True
+        logger.info("⚠️ Gemini Image فشل — جاري الانتقال لـ Pexels")
+
+    # 2️⃣ Pexels
     if PEXELS_API_KEY:
         try:
             logger.info(f"🔍 [1/3] Pexels: '{search_query}'")
