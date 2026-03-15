@@ -37,7 +37,7 @@ TEMP_IMAGE        = Path("temp_image.jpg")
 POSTED_FILE       = Path("posted_content.json")
 USED_IMAGES_FILE  = Path("used_images.json")
 MAX_IMAGE_WIDTH   = 1200
-MAX_POST_LENGTH   = 2000
+MAX_POST_LENGTH   = 3000
 
 # =========================
 # Session
@@ -311,11 +311,13 @@ def generate_post(content: dict) -> str | None:
    - مثال: #تقنية_بالدارجة #المغرب_التقني #نصائح_تقنية #TechTips #Technology
 
 **قواعد إضافية:**
-- الطول: بين 1500 و 2000 حرف
+- الطول: بين 1800 و 2500 حرف
 - من 6 إلى 8 إيموجيات موزعة بذكاء
 - لا تكرار ولا حشو
 - معلومات دقيقة وقابلة للتحقق
 - بدون markdown أو نجوم في النص النهائي
+- ⚠️ مهم جداً: المنشور لازم يكون مكتمل 100% — لا تقطعه في المنتصف
+- ⚠️ لازم ينتهي بـ: سؤال تفاعلي + الهاشتاجات — هادين العنصرين إلزاميين
 
 اكتب المنشور مباشرة ابتداءً من الـ HOOK:
 """
@@ -399,7 +401,7 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
     """
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-preview-05-20:generateContent?key={GEMINI_API_KEY}"
+        f"gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
     )
 
     # Prompt مصمم لصور السوشل ميديا
