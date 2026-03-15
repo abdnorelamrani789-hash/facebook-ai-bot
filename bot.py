@@ -1,19 +1,17 @@
 import os
-import requests
-import random
-import json
-import feedparser
 import re
+import json
+import time
+import random
 import logging
+import requests
+import io
 from datetime import date
-from urllib.parse import urlparse, urlunparse
 from pathlib import Path
 from PIL import Image
-import io
-import time
 
 # =========================
-# إعداد التسجيل (logging)
+# إعداد التسجيل
 # =========================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -24,30 +22,24 @@ logger = logging.getLogger(__name__)
 FB_PAGE_ID           = os.getenv("FB_PAGE_ID")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
 GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY")
-NEWS_API_KEY         = os.getenv("NEWS_API_KEY")          # ✅ جديد
-UNSPLASH_ACCESS_KEY  = os.getenv("UNSPLASH_ACCESS_KEY")   # ✅ مصلح
-PEXELS_API_KEY       = os.getenv("PEXELS_API_KEY")        # ✅ احتياطي
+PEXELS_API_KEY       = os.getenv("PEXELS_API_KEY")
+UNSPLASH_ACCESS_KEY  = os.getenv("UNSPLASH_ACCESS_KEY")
 MODEL_NAME           = "gemini-2.5-flash"
 
 if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN or not GEMINI_API_KEY:
-    raise EnvironmentError(
-        "❌ متغيرات البيئة المطلوبة غير موجودة: "
-        "FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN, GEMINI_API_KEY"
-    )
+    raise EnvironmentError("❌ متغيرات البيئة المطلوبة غير موجودة")
 
 # =========================
-# الثوابت والمسارات
+# الثوابت
 # =========================
-TEMP_IMAGE       = Path("temp_image.jpg")
-POSTED_FILE      = Path("posted_news.json")
-SOURCES_STATE    = Path("sources_state.json")
-USED_IMAGES_FILE = Path("used_images.json")
-
-MAX_IMAGE_WIDTH = 1200
-MAX_POST_LENGTH = 1800
+TEMP_IMAGE        = Path("temp_image.jpg")
+POSTED_FILE       = Path("posted_content.json")
+USED_IMAGES_FILE  = Path("used_images.json")
+MAX_IMAGE_WIDTH   = 1200
+MAX_POST_LENGTH   = 2000
 
 # =========================
-# Session مشتركة لجميع الطلبات
+# Session
 # =========================
 SESSION = requests.Session()
 SESSION.headers.update({
@@ -59,7 +51,112 @@ SESSION.headers.update({
 })
 
 # =========================
-# أدوات مساعدة: تحميل / حفظ JSON
+# أنواع المحتوى الفيروسي
+# كل نوع عنده topics خاصة بيه
+# =========================
+CONTENT_TYPES = [
+    {
+        "type":        "حيلة تقنية",
+        "emoji":       "💡",
+        "topics": [
+            "حيل مخفية في iPhone لا يعرفها معظم الناس",
+            "اختصارات لوحة المفاتيح في Windows توفر الوقت",
+            "إعدادات Android المخفية تحسن الأداء",
+            "حيل في WhatsApp تجهلها الأغلبية",
+            "ميزات سرية في Google Chrome",
+            "حيل في YouTube لا يعرفها كثيرون",
+            "إعدادات الكاميرا في الهاتف لصور احترافية",
+            "حيل في Gmail توفر ساعات من العمل",
+            "ميزات مخفية في MacOS تسهل الحياة",
+            "حيل في Instagram لزيادة التفاعل",
+            "اختصارات مفيدة في Google Maps",
+            "حيل في PDF تجعل حياتك أسهل",
+        ]
+    },
+    {
+        "type":        "تطبيق مفيد",
+        "emoji":       "📱",
+        "topics": [
+            "تطبيقات مجانية تغني عن الاشتراكات المدفوعة",
+            "تطبيقات إنتاجية تضاعف إنجازك اليومي",
+            "تطبيقات تحرير صور احترافية مجانية",
+            "تطبيقات تعلم البرمجة من الصفر",
+            "تطبيقات توفير الوقت والتنظيم الشخصي",
+            "تطبيقات VPN مجانية وموثوقة",
+            "تطبيقات تحويل الملفات بدون إنترنت",
+            "تطبيقات تحميل الفيديو من كل المنصات",
+            "تطبيقات قراءة الكتب مجاناً",
+            "تطبيقات إدارة كلمات المرور بأمان",
+        ]
+    },
+    {
+        "type":        "أداة AI",
+        "emoji":       "🤖",
+        "topics": [
+            "أدوات AI مجانية أفضل من ChatGPT لا تعرفها",
+            "أدوات AI لإنشاء صور احترافية مجاناً",
+            "أدوات AI لكتابة المحتوى والمقالات",
+            "أدوات AI لتحرير الفيديو تلقائياً",
+            "أدوات AI لترجمة المستندات بدقة عالية",
+            "أدوات AI لإنشاء العروض التقديمية",
+            "أدوات AI لتحليل البيانات بدون برمجة",
+            "أدوات AI لتحسين جودة الصوت والفيديو",
+            "أدوات AI لتلخيص المقالات والكتب",
+            "أدوات AI للمساعدة في البرمجة",
+            "كيف تستخدم ChatGPT لتوفير ساعات من العمل",
+        ]
+    },
+    {
+        "type":        "تحذير أمني",
+        "emoji":       "🔒",
+        "topics": [
+            "إعدادات الخصوصية في هاتفك يجب تغييرها الآن",
+            "تطبيقات خطيرة تسرب بياناتك الشخصية",
+            "كيف تعرف إذا كان حسابك مخترقاً",
+            "أخطاء شائعة تعرض كلمات مرورك للخطر",
+            "كيف تحمي هاتفك من الاختراق",
+            "إعدادات واتساب تهدد خصوصيتك",
+            "كيف تتحقق من أمان شبكة WiFi",
+            "احتيالات رقمية شائعة وكيف تتجنبها",
+            "كيف تحذف بياناتك من الإنترنت",
+            "إعدادات فيسبوك تحمي حسابك من الاختراق",
+            "علامات تدل على أن هاتفك مراقب",
+        ]
+    },
+]
+
+# =========================
+# مكتبة الصور الاحتياطية حسب النوع
+# =========================
+IMAGE_LIBRARY = {
+    "حيلة تقنية": [
+        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
+        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
+        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg",
+        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
+    ],
+    "تطبيق مفيد": [
+        "https://images.pexels.com/photos/887751/pexels-photo-887751.jpeg",
+        "https://images.pexels.com/photos/1092644/pexels-photo-1092644.jpeg",
+        "https://images.pexels.com/photos/699122/pexels-photo-699122.jpeg",
+        "https://images.pexels.com/photos/3585088/pexels-photo-3585088.jpeg",
+    ],
+    "أداة AI": [
+        "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/5380797/pexels-photo-5380797.jpeg",
+        "https://images.pexels.com/photos/8386438/pexels-photo-8386438.jpeg",
+    ],
+    "تحذير أمني": [
+        "https://images.pexels.com/photos/60504/security-protection-anti-virus-software-60504.jpeg",
+        "https://images.pexels.com/photos/5380664/pexels-photo-5380664.jpeg",
+        "https://images.pexels.com/photos/4974914/pexels-photo-4974914.jpeg",
+        "https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg",
+    ],
+}
+
+# =========================
+# أدوات JSON
 # =========================
 def _load_json(path: Path, default):
     if path.exists():
@@ -78,48 +175,15 @@ def _save_json(path: Path, data):
         logger.error(f"خطأ في حفظ {path.name}: {e}")
 
 # =========================
-# تطبيع الروابط
+# إدارة المحتوى المنشور
 # =========================
-def normalize_link(url: str) -> str:
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', '')).rstrip('/')
+def load_posted() -> list:
+    return _load_json(POSTED_FILE, [])
 
-# =========================
-# إدارة الأخبار المنشورة
-# =========================
-def load_posted_news() -> set:
-    data = _load_json(POSTED_FILE, {})
-    if isinstance(data, list):
-        return {normalize_link(link) for link in data if isinstance(link, str)}
-    elif isinstance(data, dict):
-        return {normalize_link(k) for k in data}
-    return set()
+def save_posted(posted: list):
+    # نحتفظ بآخر 200 منشور فقط
+    _save_json(POSTED_FILE, posted[-200:])
 
-def save_posted_news(posted: set):
-    _save_json(POSTED_FILE, list(posted))
-
-# =========================
-# إدارة حالة المصادر
-# =========================
-def load_sources_state() -> dict:
-    return _load_json(SOURCES_STATE, {})
-
-def save_sources_state(state: dict):
-    _save_json(SOURCES_STATE, state)
-
-def get_available_sources(sources: list, state: dict) -> list:
-    today = date.today().isoformat()
-    return [src for src in sources if state.get(src["name"]) != today]
-
-def mark_source_used(source_name: str, state: dict):
-    state[source_name] = date.today().isoformat()
-    save_sources_state(state)
-
-# =========================
-# إدارة الصور المستخدمة
-# =========================
 def load_used_images() -> set:
     return set(_load_json(USED_IMAGES_FILE, []))
 
@@ -127,275 +191,190 @@ def save_used_images(used: set):
     _save_json(USED_IMAGES_FILE, list(used))
 
 # =========================
-# مصادر الأخبار RSS (احتياطي)
+# اختيار موضوع المنشور
+# ✅ نظام ذكي يضمن التنويع اليومي
+# ✅ محتوى مختلف صباحاً ومساءً
 # =========================
-NEWS_SOURCES = [
-    # المصادر الأجنبية
-    {"name": "The Verge",         "url": "https://www.theverge.com/rss/index.xml"},
-    {"name": "TechCrunch",        "url": "https://techcrunch.com/feed/"},
-    {"name": "Wired",             "url": "https://www.wired.com/feed/rss"},
-    {"name": "Ars Technica",      "url": "https://arstechnica.com/feed/"},
-    {"name": "Engadget",          "url": "https://www.engadget.com/rss.xml"},
-    {"name": "Android Authority", "url": "https://www.androidauthority.com/feed/"},
-    {"name": "CNET",              "url": "https://www.cnet.com/rss/news/"},
-    {"name": "Tom's Hardware",    "url": "https://www.tomshardware.com/feeds/all"},
-    {"name": "Android Police",    "url": "https://www.androidpolice.com/feed/"},
-    {"name": "9to5Mac",           "url": "https://9to5mac.com/feed/"},
-    {"name": "GSMArena",          "url": "https://www.gsmarena.com/rss-news-reviews.php3"},
-    {"name": "XDA Developers",    "url": "https://www.xda-developers.com/feed/"},
-    {"name": "The Next Web",      "url": "https://thenextweb.com/feed/"},
-    {"name": "Mashable",          "url": "https://mashable.com/feed/"},
-    {"name": "VentureBeat",       "url": "https://venturebeat.com/feed/"},
-    {"name": "MacRumors",         "url": "https://www.macrumors.com/macrumors.xml"},
-    {"name": "Digital Trends",    "url": "https://www.digitaltrends.com/feed/"},
-    # المصادر العربية
-    {"name": "عرب هاردوير",                  "url": "https://www.arabhardware.net/feed"},
-    {"name": "البوابة التقنية AIT",          "url": "https://aitnews.com/feed/"},
-    {"name": "تيك 24",                       "url": "https://tech24.ma/feed/"},
-    {"name": "عالم التقنية",                 "url": "https://www.tech-wd.com/wd/feed"},
-    {"name": "سكاي نيوز عربية - تكنولوجيا", "url": "https://www.skynewsarabia.com/technology/rss"},
-    {"name": "الجزيرة نت - تكنولوجيا",      "url": "https://www.aljazeera.net/aljazeerarss/ae187c16-07be-4806-9602-4836b3fdbf06/62763653-6fe3-4c20-afd9-a12880b0a76c"},
-    {"name": "بي بي سي عربي - تكنولوجيا",  "url": "https://www.bbc.com/arabic/technology/feed.xml"},
-    {"name": "DW عربية - تكنولوجيا",        "url": "https://rss.dw.com/ar/rss-tech"},
-]
 
-# =========================
-# مكتبة الصور الاحتياطية
-# =========================
-IMAGE_LIBRARY = {
-    "gaming": [
-        "https://images.pexels.com/photos/442580/pexels-photo-442580.jpeg",
-        "https://images.pexels.com/photos/163064/play-station-ps4-controller-game-163064.jpeg",
-        "https://images.pexels.com/photos/1591060/pexels-photo-1591060.jpeg",
-        "https://images.pexels.com/photos/210745/pexels-photo-210745.jpeg",
-        "https://images.pexels.com/photos/3165335/pexels-photo-3165335.jpeg",
-    ],
-    "AI": [
-        "https://images.pexels.com/photos/373543/pexels-photo-373543.jpeg",
-        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
-        "https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg",
-        "https://images.pexels.com/photos/5380797/pexels-photo-5380797.jpeg",
-        "https://images.pexels.com/photos/8386438/pexels-photo-8386438.jpeg",
-    ],
-    "tech": [
-        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
-        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
-        "https://images.pexels.com/photos/3861971/pexels-photo-3861971.jpeg",
-    ],
-    "science": [
-        "https://images.pexels.com/photos/247431/pexels-photo-247431.jpeg",
-        "https://images.pexels.com/photos/326709/pexels-photo-326709.jpeg",
-        "https://images.pexels.com/photos/2894944/pexels-photo-2894944.jpeg",
-    ],
-    "default": [
-        "https://images.pexels.com/photos/1181675/pexels-photo-1181675.jpeg",
-        "https://images.pexels.com/photos/574071/pexels-photo-574071.jpeg",
-        "https://images.pexels.com/photos/325185/pexels-photo-325185.jpeg",
-        "https://images.pexels.com/photos/270637/pexels-photo-270637.jpeg",
-    ]
+# أنواع المحتوى المفضلة لكل وقت
+SESSION_PREFERENCE = {
+    # الصباح: محتوى تحفيزي وعملي يبدأ به اليوم
+    "morning": ["حيلة تقنية", "أداة AI", "تطبيق مفيد"],
+    # المساء: محتوى تفاعلي وتحذيري بعد يوم عمل
+    "evening": ["تحذير أمني", "حيلة تقنية", "أداة AI"],
 }
 
-# =========================
-# تحديد موضوع الخبر
-# =========================
-def get_topic(title: str) -> str:
-    lower = title.lower()
-    if any(k in lower for k in ["game", "playstation", "nintendo", "xbox", "sony", "gaming", "esports"]):
-        return "gaming"
-    if any(k in lower for k in ["ai", "artificial", "gemini", "chatgpt", "openai", "gpt", "llm", "neural"]):
-        return "AI"
-    if any(k in lower for k in ["science", "research", "scientist", "discovery", "space", "nasa"]):
-        return "science"
-    if any(k in lower for k in ["iphone", "samsung", "apple", "macbook", "android", "pixel", "smartphone"]):
-        return "tech"
-    return "default"
-
-# =========================
-# 1️⃣ جلب الأخبار عبر NEWS API (المصدر الرئيسي)
-# =========================
-def get_news_from_api(posted_links: set) -> tuple[list, str | None]:
+def pick_content_topic() -> dict:
     """
-    يجلب أفضل الأخبار التقنية عبر NewsAPI.
-    - مرتبة حسب الشعبية (popularity)
-    - مصادر تقنية موثوقة فقط
-    - يتجنب الأخبار المنشورة مسبقاً
+    يختار نوع المحتوى والموضوع بذكاء:
+    - يراعي وقت النشر (صباح / مساء)
+    - يتجنب تكرار نفس النوع يومين متتاليين
+    - يتجنب تكرار نفس الموضوع في آخر 30 منشور
     """
-    if not NEWS_API_KEY:
-        logger.warning("⚠️ NEWS_API_KEY غير موجود، سيتم تخطي NewsAPI")
-        return [], None
+    posted        = load_posted()
+    recent_topics = {p.get("topic", "") for p in posted[-30:]}
+    recent_types  = [p.get("type", "")  for p in posted[-4:]]
+    session       = os.getenv("POST_SESSION", "morning")
+    preferred     = SESSION_PREFERENCE.get(session, [])
 
-    logger.info("📡 جلب الأخبار من NewsAPI...")
+    logger.info(f"🕐 وقت النشر: {session}")
 
-    try:
-        res = SESSION.get(
-            "https://newsapi.org/v2/top-headlines",
-            params={
-                "category": "technology",
-                "language": "en",
-                "pageSize": 20,          # نجلب 20 خبر ونختار الأفضل
-                "sortBy":   "popularity",
-                "apiKey":   NEWS_API_KEY,
-            },
-            timeout=15,
-        )
+    # ترتيب الأنواع: المفضلة أولاً ثم الباقي
+    preferred_types = [c for c in CONTENT_TYPES if c["type"] in preferred]
+    other_types     = [c for c in CONTENT_TYPES if c["type"] not in preferred]
+    ordered_types   = preferred_types + other_types
+    random.shuffle(preferred_types)
+    ordered_types   = preferred_types + other_types
 
-        if res.status_code == 401:
-            logger.error("❌ NEWS_API_KEY غير صالح!")
-            return [], None
+    for content in ordered_types:
+        # تجنب نفس النوع مرتين متتاليتين
+        if recent_types and recent_types[-1] == content["type"]:
+            continue
 
-        if res.status_code == 426:
-            logger.warning("⚠️ NewsAPI: الخطة المجانية لا تدعم هذا الطلب، جاري التبديل...")
-            # الخطة المجانية تدعم /everything بدل /top-headlines
-            res = SESSION.get(
-                "https://newsapi.org/v2/everything",
-                params={
-                    "q":        "technology OR AI OR smartphone",
-                    "language": "en",
-                    "pageSize": 20,
-                    "sortBy":   "publishedAt",  # الأحدث أولاً
-                    "apiKey":   NEWS_API_KEY,
-                },
-                timeout=15,
-            )
+        # فلتر المواضيع غير المستخدمة مؤخراً
+        available_topics = [
+            t for t in content["topics"]
+            if t not in recent_topics
+        ]
 
-        res.raise_for_status()
-        articles = res.json().get("articles", [])
+        if not available_topics:
+            available_topics = content["topics"]  # إعادة الكل إذا نفدت
 
-        if not articles:
-            logger.warning("⚠️ NewsAPI: لا توجد نتائج")
-            return [], None
+        topic = random.choice(available_topics)
+        logger.info(f"📌 النوع: {content['type']} | الموضوع: {topic}")
+        return {
+            "type":  content["type"],
+            "emoji": content["emoji"],
+            "topic": topic,
+        }
 
-        # فلتر الأخبار المنشورة مسبقاً والأخبار بدون محتوى
-        new_articles = []
-        for article in articles:
-            if not article.get("url") or not article.get("title"):
-                continue
-            if article["title"] == "[Removed]":
-                continue
-            norm = normalize_link(article["url"])
-            if norm in posted_links:
-                continue
-            new_articles.append({
-                "title":     article["title"],
-                "link":      article["url"],
-                "norm_link": norm,
-                "image":     article.get("urlToImage", ""),
-                "source":    f"NewsAPI - {article['source']['name']}",
-            })
-
-        if not new_articles:
-            logger.info("⚠️ NewsAPI: كل الأخبار منشورة مسبقاً")
-            return [], None
-
-        # اختر الأفضل عشوائياً من أول 5
-        chosen = random.choice(new_articles[:5])
-        logger.info(f"✅ NewsAPI: تم اختيار '{chosen['title'][:60]}...'")
-        return [chosen], "NewsAPI"
-
-    except requests.exceptions.Timeout:
-        logger.error("❌ NewsAPI Timeout")
-    except Exception as e:
-        logger.error(f"❌ NewsAPI Error: {e}")
-
-    return [], None
-
+    # fallback
+    content = random.choice(CONTENT_TYPES)
+    return {
+        "type":  content["type"],
+        "emoji": content["emoji"],
+        "topic": random.choice(content["topics"]),
+    }
 
 # =========================
-# 2️⃣ جلب الأخبار عبر RSS (الاحتياطي)
+# توليد المنشور عبر Gemini
+# ✅ Prompt محسّن للانتشار الفيروسي
 # =========================
-def get_news_from_rss(posted_links: set) -> tuple[list, str | None]:
-    """
-    يجلب الأخبار من مصادر RSS عند فشل NewsAPI.
-    نفس المنطق القديم لكن منظم بشكل أوضح.
-    """
-    state     = load_sources_state()
-    available = get_available_sources(NEWS_SOURCES, state)
+def generate_post(content: dict) -> str | None:
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    )
 
-    if not available:
-        logger.warning("⚠️ جميع مصادر RSS استُخدمت اليوم.")
-        return [], None
+    prompt = f"""
+أنت خبير سوشل ميديا متخصص في المحتوى التقني للجمهور العربي والمغربي.
+مهمتك كتابة منشور فيسبوك يحقق انتشاراً فيروسياً حول:
 
-    random.shuffle(available)
+النوع: {content['type']} {content['emoji']}
+الموضوع: {content['topic']}
 
-    for source in available:
-        logger.info(f"🔍 RSS: البحث في {source['name']}")
+━━━━━━━━━━━━━━━━━━━━━━
+🎯 قواعد الانتشار الفيروسي:
+━━━━━━━━━━━━━━━━━━━━━━
+
+**اللغة:**
+- امزج الدارجة المغربية مع العربية الفصحى بشكل طبيعي
+- الدارجة في المقدمة والتعليقات العاطفية
+- الفصحى في شرح المعلومات التقنية
+- المصطلحات التقنية تبقى بالإنجليزية (AI، App، Update...)
+
+**هيكل المنشور الفيروسي (إلزامي):**
+
+1. **HOOK قوي (سطر واحد فقط):**
+   - إما رقم مثير: "7 أشياء في هاتفك ما كتعرفهمش..."
+   - إما تحدي: "جرب هاد الشي دابا وشوف شنو غيوقع..."
+   - إما سر: "ما كيقولوش هاد الشي بصراحة..."
+   - إما تحذير: "احذر! هاد الإعداد كيسرب بياناتك..."
+
+2. **المحتوى (القلب):**
+   - قائمة من 5 إلى 7 نقاط عملية وقابلة للتطبيق فوراً
+   - كل نقطة: عنوان قصير + شرح 1-2 جملة
+   - استخدم إيموجي مختلف لكل نقطة
+   - المعلومات حقيقية ومفيدة وقابلة للتطبيق
+
+3. **لحظة WOW:**
+   - جملة أو جملتين فيها معلومة مفاجئة أو إحصائية صادمة
+
+4. **CTA فيروسي (مهم جداً):**
+   - سؤال يجبر على التعليق: "أنتم واش كتستخدمو هاد الشي؟"
+   - أو طلب مشاركة: "شارك مع شخص يحتاج هاد المعلومة"
+   - أو تحدي: "جرب الخطوة الأولى دابا وقول لنا النتيجة"
+
+5. **الهاشتاجات (سطر منفصل):**
+   - 5 هاشتاجات: 3 عربية + 2 إنجليزية
+   - مثال: #تقنية_بالدارجة #المغرب_التقني #نصائح_تقنية #TechTips #Technology
+
+**قواعد إضافية:**
+- الطول: بين 1500 و 2000 حرف
+- من 6 إلى 8 إيموجيات موزعة بذكاء
+- لا تكرار ولا حشو
+- معلومات دقيقة وقابلة للتحقق
+- بدون markdown أو نجوم في النص النهائي
+
+اكتب المنشور مباشرة ابتداءً من الـ HOOK:
+"""
+
+    headers = {"Content-Type": "application/json"}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    delay   = 30
+
+    for attempt in range(1, 4):
         try:
-            resp = SESSION.get(source["url"], timeout=15)
-            resp.raise_for_status()
-            feed = feedparser.parse(resp.content)
+            logger.info(f"📡 توليد المنشور {attempt}/3...")
+            res = SESSION.post(url, json=payload, headers=headers, timeout=60)
+
+            if res.status_code == 429:
+                logger.warning(f"⚠️ Gemini 429 — انتظار {delay}ث...")
+                time.sleep(delay); delay *= 2; continue
+
+            res.raise_for_status()
+            post_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+            # تنظيف Markdown
+            post_text = re.sub(r'^\s*\*\s+',     '• ', post_text, flags=re.MULTILINE)
+            post_text = re.sub(r'\*\*(.*?)\*\*',  r'\1', post_text)
+            post_text = re.sub(r'\*(.*?)\*',       r'\1', post_text)
+            post_text = re.sub(r'#+\s*',           '',    post_text)
+
+            # قطع ذكي إذا تجاوز الحد
+            if len(post_text) > MAX_POST_LENGTH:
+                post_text = post_text[:MAX_POST_LENGTH].rsplit(' ', 1)[0] + "..."
+
+            logger.info(f"✅ تم توليد المنشور ({len(post_text)} حرف)")
+            return post_text
+
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Gemini Timeout (محاولة {attempt})")
         except Exception as e:
-            logger.error(f"❌ فشل جلب RSS من {source['name']}: {e}")
-            continue
+            logger.error(f"❌ Gemini Error (محاولة {attempt}): {e}")
 
-        if feed.bozo and not feed.entries:
-            continue
+        if attempt < 3:
+            time.sleep(delay); delay *= 2
 
-        for entry in feed.entries:
-            if not getattr(entry, 'link', None):
-                continue
-
-            norm_link = normalize_link(entry.link)
-            if norm_link in posted_links:
-                continue
-
-            content     = (entry.get('content', [{}])[0].get('value', '') or entry.get('summary', ''))
-            image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', content)
-            image       = image_match.group(1) if image_match else ""
-
-            logger.info(f"✅ RSS: تم العثور على خبر جديد من {source['name']}")
-            return [{
-                "title":     entry.title,
-                "link":      entry.link,
-                "norm_link": norm_link,
-                "image":     image,
-                "source":    source["name"],
-            }], source["name"]
-
-    logger.info("❌ RSS: لم يُعثر على أي خبر جديد.")
-    return [], None
-
+    logger.error("❌ فشلت جميع المحاولات مع Gemini")
+    return None
 
 # =========================
-# الدالة الرئيسية لجلب الأخبار
-# =========================
-def get_news(posted_links: set) -> tuple[list, str | None]:
-    """
-    يجرب NewsAPI أولاً، ثم RSS كاحتياطي.
-    """
-    # المصدر الرئيسي: NewsAPI
-    articles, source = get_news_from_api(posted_links)
-    if articles:
-        return articles, source
-
-    # الاحتياطي: RSS
-    logger.info("🔄 التبديل إلى مصادر RSS...")
-    return get_news_from_rss(posted_links)
-
-
-# =========================
-# تحميل الصورة + تغيير حجمها
+# جلب الصورة
 # =========================
 def download_and_resize_image(url: str) -> bool:
     try:
         res = SESSION.get(url, timeout=30)
         if res.status_code != 200 or "image" not in res.headers.get("Content-Type", ""):
             return False
-
         img = Image.open(io.BytesIO(res.content))
-
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
-
         if img.width > MAX_IMAGE_WIDTH:
-            ratio      = MAX_IMAGE_WIDTH / img.width
-            new_height = int(img.height * ratio)
-            img        = img.resize((MAX_IMAGE_WIDTH, new_height), Image.LANCZOS)
-            logger.info(f"🖼️ تم تغيير حجم الصورة إلى {img.width}x{img.height}")
-
+            ratio = MAX_IMAGE_WIDTH / img.width
+            img   = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
         img.save(TEMP_IMAGE, "JPEG", quality=85, optimize=True)
         return True
-
     except Exception as e:
         logger.error(f"خطأ في تحميل الصورة: {e}")
         return False
@@ -408,255 +387,81 @@ def validate_image() -> bool:
     except Exception:
         return False
 
-
-# =========================
-# 1️⃣ صور: Unsplash API الرسمي ✅ (مصلح)
-# =========================
-def get_unsplash_image(title: str, used_images: set) -> str | None:
+def get_image(content_type: str, topic: str, used_images: set) -> bool:
     """
-    يستخدم Unsplash API الرسمي بـ Access Key.
-    المشكلة القديمة: كان يستخدم source.unsplash.com المتوقف.
-    الحل: API الرسمي api.unsplash.com مع UNSPLASH_ACCESS_KEY.
+    يجلب صورة مناسبة للمحتوى:
+    1. Pexels API
+    2. Unsplash API
+    3. مكتبة محلية احتياطية
     """
-    if not UNSPLASH_ACCESS_KEY:
-        logger.warning("⚠️ UNSPLASH_ACCESS_KEY غير موجود")
-        return None
+    # كلمات بحث من الموضوع
+    search_query = " ".join(topic.split()[:4])
 
-    clean_title   = re.sub(r'[^\w\s]', '', title).strip()
-    search_queries = [
-        " ".join(clean_title.split()[:5]),  # أول 5 كلمات
-        get_topic(title),                   # موضوع الخبر
-    ]
-
-    for query in search_queries:
-        if not query.strip():
-            continue
+    # 1️⃣ Pexels
+    if PEXELS_API_KEY:
         try:
-            logger.info(f"🔍 Unsplash: البحث عن '{query}'")
-            res = SESSION.get(
-                "https://api.unsplash.com/search/photos",
-                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-                params={
-                    "query":       query,
-                    "per_page":    15,
-                    "orientation": "landscape",
-                    "content_filter": "high",   # صور آمنة فقط
-                },
-                timeout=15,
-            )
-
-            if res.status_code == 401:
-                logger.error("❌ UNSPLASH_ACCESS_KEY غير صالح!")
-                return None
-
-            if res.status_code == 403:
-                logger.warning("⚠️ Unsplash: تجاوزت الحد الشهري (50 طلب/ساعة)")
-                return None
-
-            res.raise_for_status()
-            results = res.json().get("results", [])
-
-            if not results:
-                logger.info(f"⚠️ Unsplash: لا نتائج لـ '{query}'")
-                continue
-
-            # فلتر الصور غير المستخدمة
-            new_photos = [
-                p for p in results
-                if p["urls"]["regular"] not in used_images
-            ]
-
-            chosen    = random.choice(new_photos if new_photos else results)
-            image_url = chosen["urls"]["regular"]  # جودة جيدة ~1080px
-
-            logger.info(f"✅ Unsplash: تم العثور على صورة (ID: {chosen['id']})")
-            return image_url
-
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Unsplash Timeout للبحث: '{query}'")
-        except Exception as e:
-            logger.error(f"❌ Unsplash Error: {e}")
-
-    logger.warning("⚠️ Unsplash: فشلت جميع المحاولات")
-    return None
-
-
-# =========================
-# 2️⃣ صور: Pexels API ✅ (احتياطي)
-# =========================
-def get_pexels_image(title: str, used_images: set) -> str | None:
-    """
-    يستخدم Pexels كخيار احتياطي ثانٍ بعد Unsplash.
-    """
-    if not PEXELS_API_KEY:
-        logger.warning("⚠️ PEXELS_API_KEY غير موجود")
-        return None
-
-    clean_title    = re.sub(r'[^\w\s]', '', title).strip()
-    search_queries = [
-        " ".join(clean_title.split()[:4]),
-        get_topic(title),
-    ]
-
-    for query in search_queries:
-        if not query.strip():
-            continue
-        try:
-            logger.info(f"🔍 Pexels: البحث عن '{query}'")
+            logger.info(f"🔍 [1/3] Pexels: '{search_query}'")
             res = SESSION.get(
                 "https://api.pexels.com/v1/search",
                 headers={"Authorization": PEXELS_API_KEY},
                 params={
-                    "query":       query,
+                    "query":       search_query,
                     "per_page":    15,
                     "orientation": "landscape",
                     "size":        "large",
                 },
                 timeout=15,
             )
-
-            if res.status_code == 401:
-                logger.error("❌ PEXELS_API_KEY غير صالح!")
-                return None
-
-            if res.status_code == 429:
-                logger.warning("⚠️ Pexels: تجاوزت الحد اليومي")
-                return None
-
-            res.raise_for_status()
-            photos = res.json().get("photos", [])
-
-            if not photos:
-                continue
-
+            photos    = res.json().get("photos", [])
             new_photos = [p for p in photos if p["src"]["large2x"] not in used_images]
-            chosen     = random.choice(new_photos if new_photos else photos)
-            image_url  = chosen["src"]["large2x"]
-
-            logger.info(f"✅ Pexels: تم العثور على صورة (ID: {chosen['id']})")
-            return image_url
-
+            if new_photos or photos:
+                chosen = random.choice(new_photos if new_photos else photos)
+                if download_and_resize_image(chosen["src"]["large2x"]) and validate_image():
+                    logger.info("✅ صورة من Pexels")
+                    used_images.add(chosen["src"]["large2x"])
+                    save_used_images(used_images)
+                    return True
         except Exception as e:
             logger.error(f"❌ Pexels Error: {e}")
 
-    logger.warning("⚠️ Pexels: فشلت جميع المحاولات")
-    return None
-
-
-# =========================
-# توليد المنشور عبر Gemini
-# =========================
-def generate_post(title: str) -> str | None:
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
-    )
-
-    prompt = f"""
-أنت "سمير" — كاتب محتوى تقني مغربي شاب، عندك 28 عام، تسكن فكاسابلانكا، متحمس للتكنولوجيا وكتشارك متابعيك أحدث الأخبار التقنية بأسلوب حيوي وعفوي.
-
-الخبر: "{title}"
-
-━━━━━━━━━━━━━━━━━━━━━━
-🎯 مهمتك: اكتب منشور فيسبوك واحد بالدارجة المغربية
-━━━━━━━━━━━━━━━━━━━━━━
-
-## اللغة والشخصية:
-- دارجة مغربية طبيعية 100% — مش مترجمة من الفصحى
-- تحكي بحال صاحب كيحكي لصاحبو: بدون تكلف ولا رسمية زائدة
-- المصطلحات التقنية تبقى بالإنجليزية (AI، update، launch، specs) مدمجة بشكل طبيعي
-- تعابير مغربية أصيلة مثل: "هاد الشي خايب/زوين"، "كنقلب عليها"، "راه واضح"، "أش كتگول"، "بصح..."، "واخا..."
-- تجنب: الفصحى المتصنعة، الترجمة الحرفية، الأسلوب الإذاعي
-
-## الهيكل الإلزامي (اتبع هاد الترتيب بالضبط):
-
-**[HOOK]** — سطر واحد فقط، يخلي الواحد يوقف التمرير:
-→ إما سؤال مثير: "واش خبرتي بلي..."
-→ إما إعلان مفاجئ: "راه وقع! [الشيء الكبير]..."
-→ إما رأي جريء: "هاد الـ [شيء] غيبدل كلشي..."
-
-**[CONTEXT]** — جملتين أو 3 تشرح الخبر ببساطة، بدون تعقيد
-
-**[DETAILS]** — نقطتين أو 3 بهاد الشكل:
-⚡ [عنوان قصير]: شرح مختصر 20-30 كلمة
-⚡ [عنوان قصير]: شرح مختصر 20-30 كلمة
-⚡ [عنوان قصير]: شرح مختصر 20-30 كلمة (اختياري)
-
-**[IMPACT]** — جملة أو جملتين: شنو معناه هاد الخبر للمغاربة تحديداً
-
-**[OPINION]** — رأيك الشخصي كـ"سمير": صريح، مباشر، مش محايد
-مثال: "أنا شخصياً كنشوف بلي..." أو "بصح الصراحة..."
-
-**[CTA]** — سؤال تفاعلي واحد قوي يحفز التعليق:
-→ مش سؤال عام، سؤال متعلق بالخبر مباشرة
-→ مثال: "أنتم واش غتشريو [المنتج] ولا كتستنيو [البديل]؟"
-
-**[HASHTAGS]** — سطر منفصل: 5 هاشتاجات (مزيج عربي وإنجليزي)
-→ مثال: #تقنية_بالدارجة #المغرب_التقني #TechNews #AI #تكنولوجيا
-
-## قواعد الإيموجي:
-- 5 إلى 7 إيموجيات موزعة بذكاء على المنشور
-- مش كلها في آخر السطر — وزعها في البداية والوسط والنهاية
-- استعمل إيموجيات تعبر عن المحتوى مش ديكور فقط
-
-## الطول والجودة:
-- بين 1200 و 1800 حرف — مش أقل ومش أكثر
-- كل جملة لازم تضيف قيمة — حذف أي حشو أو تكرار
-- القراءة تاخد مش أكثر من 45 ثانية
-
-## ❌ ممنوع تماماً:
-- مقدمات من بحال "بسم الله" أو "السلام عليكم أصدقاء"
-- عبارات تسويقية فارغة: "ثورة حقيقية"، "تغيير جذري"، "لا مثيل له"
-- تكرار عنوان الخبر كما هو
-- أي markdown أو نجوم (**) في النص النهائي
-
-اكتب المنشور مباشرة الآن — ابدأ بالـ HOOK مباشرة بدون أي مقدمة:
-"""
-
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    delay   = 30
-
-    for attempt in range(1, 4):
+    # 2️⃣ Unsplash
+    if UNSPLASH_ACCESS_KEY:
         try:
-            logger.info(f"📡 محاولة توليد المنشور {attempt}/3...")
-            res = SESSION.post(url, json=payload, headers=headers, timeout=60)
-
-            if res.status_code == 429:
-                logger.warning(f"⚠️ Gemini 429 - انتظار {delay}ث...")
-                time.sleep(delay)
-                delay *= 2
-                continue
-
-            res.raise_for_status()
-            post_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-            # تنظيف Markdown
-            post_text = re.sub(r'^\s*\*\s+',    '🔹 ', post_text, flags=re.MULTILINE)
-            post_text = re.sub(r'\n\s*\*\s+',   '\n🔹 ', post_text)
-            post_text = re.sub(r'\*\*(.*?)\*\*', r'\1', post_text)
-            post_text = re.sub(r'\*(.*?)\*',     r'\1', post_text)
-
-            if len(post_text) > MAX_POST_LENGTH:
-                logger.warning(f"⚠️ النص طويل ({len(post_text)} حرف)، سيتم تقليمه.")
-                post_text = post_text[:MAX_POST_LENGTH].rsplit(' ', 1)[0] + "..."
-
-            logger.info("✅ تم توليد المنشور بنجاح")
-            return post_text
-
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Gemini Timeout (محاولة {attempt})")
+            logger.info(f"🔍 [2/3] Unsplash: '{search_query}'")
+            res = SESSION.get(
+                "https://api.unsplash.com/search/photos",
+                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+                params={
+                    "query":          search_query,
+                    "per_page":       15,
+                    "orientation":    "landscape",
+                    "content_filter": "high",
+                },
+                timeout=15,
+            )
+            results   = res.json().get("results", [])
+            new_photos = [p for p in results if p["urls"]["regular"] not in used_images]
+            if new_photos or results:
+                chosen = random.choice(new_photos if new_photos else results)
+                url    = chosen["urls"]["regular"]
+                if download_and_resize_image(url) and validate_image():
+                    logger.info("✅ صورة من Unsplash")
+                    used_images.add(url)
+                    save_used_images(used_images)
+                    return True
         except Exception as e:
-            logger.error(f"❌ Gemini Error (محاولة {attempt}): {e}")
+            logger.error(f"❌ Unsplash Error: {e}")
 
-        if attempt < 3:
-            logger.warning(f"⚠️ إعادة المحاولة بعد {delay}ث...")
-            time.sleep(delay)
-            delay *= 2
+    # 3️⃣ مكتبة محلية احتياطية
+    logger.info("🖼️  [3/3] صورة احتياطية محلية")
+    backup_list = IMAGE_LIBRARY.get(content_type, list(IMAGE_LIBRARY.values())[0])
+    backup      = random.choice(backup_list)
+    if download_and_resize_image(backup) and validate_image():
+        logger.info(f"✅ صورة احتياطية ({content_type})")
+        return True
 
-    logger.error("❌ فشلت جميع المحاولات مع Gemini.")
-    return None
-
+    logger.error("❌ فشل تحميل أي صورة")
+    return False
 
 # =========================
 # النشر على فيسبوك
@@ -676,100 +481,56 @@ def post_to_facebook(message: str) -> dict | None:
         logger.error(f"❌ Facebook API Error: {e}")
         return None
 
-
 # =========================
 # الدالة الرئيسية
 # =========================
 def main():
+    session = os.getenv("POST_SESSION", "morning")
+    session_label = "🌅 الصباح" if session == "morning" else "🌙 المساء"
+
     logger.info("=" * 50)
-    logger.info("🚀 بدء دورة النشر")
+    logger.info(f"🚀 بدء دورة النشر — {session_label}")
     logger.info("=" * 50)
 
-    posted_news = load_posted_news()
+    # 1️⃣ اختيار الموضوع
+    content = pick_content_topic()
+    logger.info(f"📌 {content['emoji']} {content['type']}: {content['topic']}")
 
-    # ── جلب الأخبار (NewsAPI → RSS) ──────────────────
-    articles, source_name = get_news(posted_news)
-
-    if not articles:
-        logger.info("❌ لا توجد أخبار جديدة للنشر.")
-        return
-
-    article = articles[0]
-    logger.info(f"📝 الخبر المختار: {article['title'][:70]}...")
-    logger.info(f"📰 المصدر: {article['source']}")
-
-    # ── جلب الصورة (4 مستويات) ───────────────────────
-    used_images = load_used_images()
-    image_ok    = False
-
-    # 1️⃣ صورة الخبر الأصلية
-    if article.get("image"):
-        logger.info("🖼️  [1/4] تجربة صورة الخبر الأصلية...")
-        image_ok = download_and_resize_image(article["image"]) and validate_image()
-        if image_ok:
-            logger.info("✅ تم استخدام صورة الخبر الأصلية")
-
-    # 2️⃣ Unsplash API الرسمي
-    if not image_ok:
-        logger.info("🔍 [2/4] البحث عبر Unsplash API...")
-        url = get_unsplash_image(article["title"], used_images)
-        if url:
-            image_ok = download_and_resize_image(url) and validate_image()
-            if image_ok:
-                logger.info("✅ تم استخدام صورة من Unsplash")
-                used_images.add(url)
-                save_used_images(used_images)
-
-    # 3️⃣ Pexels API
-    if not image_ok:
-        logger.info("🔍 [3/4] البحث عبر Pexels API...")
-        url = get_pexels_image(article["title"], used_images)
-        if url:
-            image_ok = download_and_resize_image(url) and validate_image()
-            if image_ok:
-                logger.info("✅ تم استخدام صورة من Pexels")
-                used_images.add(url)
-                save_used_images(used_images)
-
-    # 4️⃣ المكتبة الاحتياطية
-    if not image_ok:
-        topic  = get_topic(article["title"])
-        backup = random.choice(IMAGE_LIBRARY.get(topic, IMAGE_LIBRARY["default"]))
-        logger.info(f"🖼️  [4/4] استخدام صورة احتياطية (موضوع: {topic})")
-        image_ok = download_and_resize_image(backup) and validate_image()
-        if not image_ok:
-            logger.error("❌ فشل تحميل أي صورة. إيقاف.")
-            return
-
-    # ── توليد المنشور ────────────────────────────────
-    post_text = generate_post(article["title"])
+    # 2️⃣ توليد المنشور
+    post_text = generate_post(content)
     if not post_text:
-        logger.error("❌ فشل توليد المنشور.")
-        return
+        logger.error("❌ فشل توليد المنشور"); return
 
-    # ── النشر على فيسبوك ─────────────────────────────
+    # 3️⃣ جلب الصورة
+    used_images = load_used_images()
+    if not get_image(content["type"], content["topic"], used_images):
+        logger.error("❌ فشل تحميل الصورة"); return
+
+    # 4️⃣ النشر على فيسبوك
     logger.info("🚀 جاري النشر على فيسبوك...")
     result = post_to_facebook(post_text)
 
     if result and "id" in result:
-        logger.info(f"✅ تم النشر بنجاح! المعرف: {result['id']}")
+        logger.info(f"✅ تم النشر بنجاح! ID: {result['id']}")
 
-        # حفظ الخبر كمنشور
-        posted_news.add(article["norm_link"])
-        save_posted_news(posted_news)
-
-        # تحديث حالة المصدر (للـ RSS فقط)
-        if source_name and source_name != "NewsAPI":
-            state = load_sources_state()
-            mark_source_used(source_name, state)
-            logger.info(f"📅 تم تحديث حالة المصدر: {source_name}")
+        # حفظ المحتوى المنشور
+        posted = load_posted()
+        posted.append({
+            "id":      result["id"],
+            "type":    content["type"],
+            "topic":   content["topic"],
+            "date":    date.today().isoformat(),
+            "session": os.getenv("POST_SESSION", "morning"),
+        })
+        save_posted(posted)
+        logger.info(f"💾 تم حفظ: {content['type']} — {content['topic']}")
     else:
-        logger.error(f"❌ فشل النشر على فيسبوك: {result}")
+        logger.error(f"❌ فشل النشر: {result}")
 
-    # ── تنظيف الملفات المؤقتة ────────────────────────
+    # تنظيف
     try:
         TEMP_IMAGE.unlink(missing_ok=True)
-        logger.info("🧹 تم حذف الصورة المؤقتة")
+        logger.info("🧹 تم تنظيف الملفات المؤقتة")
     except Exception:
         pass
 
