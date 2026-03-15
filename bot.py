@@ -639,6 +639,63 @@ def add_watermark(img: Image.Image, text: str = "تقنية بالدارجة") -
 
 
 # =========================
+# توليد كلمات بحث ذكية بـ Gemini
+# =========================
+def generate_search_query(content_type: str, topic: str) -> str:
+    """
+    يستخدم Gemini لتوليد كلمة بحث إنجليزية مخصصة للموضوع
+    تعطي نتائج Pexels أكثر صلة بالمحتوى
+    """
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    )
+    prompt = f"""
+You are a Pexels image search expert.
+Given this Arabic tech post topic: "{topic}" (type: {content_type})
+
+Generate ONE short English search query (2-4 words maximum) for Pexels that will find 
+a highly relevant, professional, visually appealing image for this topic.
+
+Rules:
+- English only
+- 2 to 4 words maximum
+- Concrete and visual (not abstract)
+- Professional photography style
+- No people faces if possible
+
+Examples:
+- "حيل مخفية في iPhone" → "iphone screen close up"
+- "أدوات AI مجانية أفضل من ChatGPT" → "artificial intelligence robot"
+- "تطبيقات VPN مجانية وموثوقة" → "vpn security network shield"
+- "إعدادات الخصوصية في هاتفك" → "smartphone privacy settings"
+- "كيف تبدأ تتعلم البرمجة" → "coding laptop programming"
+
+Reply with ONLY the search query, nothing else.
+"""
+    try:
+        res = SESSION.post(
+            url,
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+        if res.status_code == 200:
+            query = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            # تنظيف الجواب
+            query = query.strip('"'').strip().lower()
+            query = re.sub(r'[^\w\s]', '', query)[:50]
+            if query and len(query) > 3:
+                logger.info(f"🧠 Gemini اقترح: '{query}'")
+                return query
+    except Exception as e:
+        logger.warning(f"⚠️ فشل توليد كلمة البحث: {e}")
+
+    # fallback: كلمات افتراضية
+    return PEXELS_QUERIES.get(content_type, ["technology"])[0]
+
+
+# =========================
 # قاموس كلمات البحث الذكية لـ Pexels
 # كل نوع محتوى عنده 5 كلمات بحث مختلفة
 # يتم اختيار واحدة عشوائياً كل مرة
@@ -795,18 +852,22 @@ def get_image(content_type: str, topic: str, used_images: set) -> bool:
     4. يفضل الصور الأفقية عالية الجودة
     5. مكتبة محلية كآخر خيار
     """
-    queries = PEXELS_QUERIES.get(content_type, ["technology innovation", "digital tech"])
-    random.shuffle(queries)  # خلط الترتيب كل مرة
-
     # 1️⃣ Gemini Image (إذا كان Pro متاحاً)
     if GEMINI_API_KEY:
         if generate_image_with_gemini(content_type, topic) and validate_image():
             return True
         logger.info("⚠️ Gemini Image فشل — جاري الانتقال لـ Pexels")
 
-    # 2️⃣ Pexels — يجرب 3 كلمات بحث مختلفة
+    # 2️⃣ Pexels مع كلمات بحث ذكية من Gemini
     if PEXELS_API_KEY:
-        for i, search_query in enumerate(queries[:3]):
+        # الكلمة الأولى: Gemini يولدها مخصصة للموضوع
+        smart_query   = generate_search_query(content_type, topic)
+        # الكلمات الاحتياطية: من القاموس الثابت
+        fallback_queries = PEXELS_QUERIES.get(content_type, ["technology innovation"])
+        random.shuffle(fallback_queries)
+        all_queries = [smart_query] + fallback_queries[:2]
+
+        for i, search_query in enumerate(all_queries):
             try:
                 logger.info(f"🔍 Pexels [{i+1}/3]: '{search_query}'")
                 res = SESSION.get(
