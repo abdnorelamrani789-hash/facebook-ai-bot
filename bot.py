@@ -124,6 +124,105 @@ CONTENT_TYPES = [
             "علامات تدل على أن هاتفك مراقب",
         ]
     },
+    # ══════════════════════════════════════════
+    # 6 أنواع جديدة ✅
+    # ══════════════════════════════════════════
+    {
+        "type":  "مقارنة تقنية",
+        "emoji": "⚔️",
+        "topics": [
+            "iPhone ولا Android — الجواب الحقيقي اللي ما كيقولوهش",
+            "ChatGPT ولا Gemini — أيهما أفضل في 2025؟",
+            "Windows ولا MacOS — شنو تختار وعلاش؟",
+            "Samsung ولا Apple — مقارنة شاملة وصريحة",
+            "WiFi ولا بيانات الجوال — أيهما أسرع وأأمن؟",
+            "تطبيقات مدفوعة ولا مجانية — الفرق الحقيقي",
+            "Chrome ولا Firefox ولا Edge — المتصفح الأفضل",
+            "WhatsApp ولا Telegram — أيهما أفضل وأأمن؟",
+            "SSD ولا HDD — لماذا SSD يغير كل شيء؟",
+            "5G ولا 4G — هل يستحق الترقية الآن؟",
+        ]
+    },
+    {
+        "type":  "خطوات عملية",
+        "emoji": "📋",
+        "topics": [
+            "كيف تبدأ تتعلم البرمجة من الصفر في 2025",
+            "كيف تحمي خصوصيتك على الإنترنت خطوة بخطوة",
+            "كيف تنظم وقتك باستخدام التكنولوجيا",
+            "كيف تبني حضوراً رقمياً احترافياً",
+            "كيف تختار هاتفاً جديداً بذكاء",
+            "كيف تسرع هاتفك القديم بدون شراء جديد",
+            "كيف تحقق دخلاً من الإنترنت خطوة بخطوة",
+            "كيف تتعلم لغة إنجليزية بالتكنولوجيا مجاناً",
+            "كيف تنشئ CV احترافياً باستخدام AI",
+            "كيف تحمي أطفالك على الإنترنت",
+        ]
+    },
+    {
+        "type":  "إحصائيات صادمة",
+        "emoji": "📊",
+        "topics": [
+            "أرقام صادمة عن استخدام الهاتف لن تصدقها",
+            "إحصائيات مرعبة عن الاختراق الإلكتروني في 2025",
+            "أرقام عن وقتك على السوشل ميديا ستصدمك",
+            "إحصائيات عن AI وكيف غيّر سوق العمل",
+            "أرقام عن الجرائم الإلكترونية في العالم العربي",
+            "إحصائيات عن التسوق الإلكتروني في المغرب",
+            "أرقام عن مستخدمي الإنترنت في إفريقيا",
+            "إحصائيات صادمة عن بيانات المستخدمين المسربة",
+            "أرقام عن الوقت الضائع في السوشل ميديا يومياً",
+            "إحصائيات عن نمو AI في السنوات القادمة",
+        ]
+    },
+    {
+        "type":  "سؤال تفاعلي",
+        "emoji": "🗳️",
+        "topics": [
+            "أنتم فريق iPhone ولا Android؟ ولماذا؟",
+            "كم ساعة تقضي على هاتفك يومياً؟",
+            "ما هو التطبيق الذي لا تستطيع العيش بدونه؟",
+            "هل تثق في تخزين بياناتك على السحابة؟",
+            "ما هو أكثر شيء يزعجك في هاتفك؟",
+            "هل جربت أدوات AI في عملك؟ ما رأيك؟",
+            "ما هي أول حيلة تقنية تعلمتها غيرت حياتك؟",
+            "هل تفضل العمل من المنزل أم المكتب؟ دور التقنية؟",
+            "ما هو الجهاز التقني الذي لا تستطيع العيش بدونه؟",
+            "هل تعتقد أن AI سيأخذ وظيفتك في المستقبل؟",
+        ]
+    },
+    {
+        "type":  "نصيحة احترافية",
+        "emoji": "🎯",
+        "topics": [
+            "نصائح تقنية يستخدمها المحترفون ولا يشاركونها",
+            "كيف يستخدم المبرمجون الكمبيوتر بطريقة مختلفة",
+            "أسرار المصورين المحترفين في تصوير الهاتف",
+            "كيف يدير المديرالناجح وقته باستخدام التقنية",
+            "نصائح خبراء الأمن الإلكتروني لحماية نفسك",
+            "كيف يبحث المحترفون على Google بطريقة مختلفة",
+            "أسرار يوتيوبرز الناجحين في إنشاء المحتوى",
+            "كيف يتعلم المبرمجون الناجحون مهارات جديدة",
+            "نصائح خبراء SEO لظهورك على الإنترنت",
+            "كيف يستخدم رجال الأعمال AI لزيادة الإنتاجية",
+        ]
+    },
+    {
+        "type":  "ترند تقني",
+        "emoji": "🔥",
+        "topics": [
+            "أبرز التقنيات التي ستغير حياتك في 2025",
+            "تقنيات اختفت وأخرى ستختفي قريباً",
+            "مستقبل الهواتف الذكية بعد 5 سنوات",
+            "كيف ستغير AI طريقة عملنا بحلول 2030",
+            "أحدث ترندات التقنية التي يتحدث عنها الجميع",
+            "تقنيات الواقع الافتراضي وأين وصلنا",
+            "مستقبل العمل عن بُعد والتقنيات الداعمة له",
+            "تقنيات قادمة ستجعل حياتك أسهل بكثير",
+            "كيف ستبدو السيارات الذكية في المستقبل القريب",
+            "مستقبل الذكاء الاصطناعي في التعليم",
+        ]
+    },
 ]
 
 # =========================
@@ -153,6 +252,42 @@ IMAGE_LIBRARY = {
         "https://images.pexels.com/photos/5380664/pexels-photo-5380664.jpeg",
         "https://images.pexels.com/photos/4974914/pexels-photo-4974914.jpeg",
         "https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg",
+    ],
+    "مقارنة تقنية": [
+        "https://images.pexels.com/photos/1779487/pexels-photo-1779487.jpeg",
+        "https://images.pexels.com/photos/2582937/pexels-photo-2582937.jpeg",
+        "https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg",
+        "https://images.pexels.com/photos/3861958/pexels-photo-3861958.jpeg",
+    ],
+    "خطوات عملية": [
+        "https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg",
+        "https://images.pexels.com/photos/1181298/pexels-photo-1181298.jpeg",
+        "https://images.pexels.com/photos/3184360/pexels-photo-3184360.jpeg",
+        "https://images.pexels.com/photos/6804073/pexels-photo-6804073.jpeg",
+    ],
+    "إحصائيات صادمة": [
+        "https://images.pexels.com/photos/590022/pexels-photo-590022.jpeg",
+        "https://images.pexels.com/photos/669615/pexels-photo-669615.jpeg",
+        "https://images.pexels.com/photos/265087/pexels-photo-265087.jpeg",
+        "https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg",
+    ],
+    "سؤال تفاعلي": [
+        "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+        "https://images.pexels.com/photos/1181533/pexels-photo-1181533.jpeg",
+        "https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg",
+        "https://images.pexels.com/photos/3184339/pexels-photo-3184339.jpeg",
+    ],
+    "نصيحة احترافية": [
+        "https://images.pexels.com/photos/3184418/pexels-photo-3184418.jpeg",
+        "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg",
+        "https://images.pexels.com/photos/3182812/pexels-photo-3182812.jpeg",
+        "https://images.pexels.com/photos/3184287/pexels-photo-3184287.jpeg",
+    ],
+    "ترند تقني": [
+        "https://images.pexels.com/photos/3861969/pexels-photo-3861969.jpeg",
+        "https://images.pexels.com/photos/2599244/pexels-photo-2599244.jpeg",
+        "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg",
+        "https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg",
     ],
 }
 
@@ -200,9 +335,9 @@ def save_used_images(used: set):
 # أنواع المحتوى المفضلة لكل وقت
 SESSION_PREFERENCE = {
     # الصباح: محتوى تحفيزي وعملي يبدأ به اليوم
-    "morning": ["حيلة تقنية", "أداة AI", "تطبيق مفيد"],
-    # المساء: محتوى تفاعلي وتحذيري بعد يوم عمل
-    "evening": ["تحذير أمني", "حيلة تقنية", "أداة AI"],
+    "morning": ["حيلة تقنية", "أداة AI", "خطوات عملية", "نصيحة احترافية", "ترند تقني"],
+    # المساء: محتوى تفاعلي بعد يوم عمل
+    "evening": ["تحذير أمني", "مقارنة تقنية", "سؤال تفاعلي", "إحصائيات صادمة", "تطبيق مفيد"],
 }
 
 def pick_content_topic() -> dict:
@@ -406,10 +541,16 @@ def generate_image_with_gemini(content_type: str, topic: str) -> bool:
 
     # Prompt مصمم لصور السوشل ميديا
     IMAGE_STYLE = {
-        "حيلة تقنية":  "modern tech flat design, blue and cyan colors, clean minimal style, smartphone or laptop, professional social media post",
-        "تطبيق مفيد":  "colorful app interface mockup, material design, smartphone screen, vibrant colors, clean background",
-        "أداة AI":      "futuristic AI concept, purple and blue gradient, neural network visualization, glowing elements, digital art",
-        "تحذير أمني":  "cybersecurity concept, red and dark colors, shield or lock icon, warning atmosphere, professional design",
+        "حيلة تقنية":      "modern tech flat design, blue and cyan colors, clean minimal style, smartphone or laptop, professional social media",
+        "تطبيق مفيد":      "colorful app interface mockup, material design, smartphone screen, vibrant colors, clean background",
+        "أداة AI":          "futuristic AI concept, purple and blue gradient, neural network visualization, glowing elements, digital art",
+        "تحذير أمني":      "cybersecurity concept, red and dark colors, shield or lock icon, warning atmosphere, professional design",
+        "مقارنة تقنية":    "two devices side by side comparison, clean white background, modern tech photography, professional studio",
+        "خطوات عملية":     "step by step infographic style, clean colorful design, checklist, productivity concept, modern flat design",
+        "إحصائيات صادمة":  "data visualization concept, colorful charts and graphs, modern infographic style, blue and orange colors",
+        "سؤال تفاعلي":     "people using smartphones, diverse group, social interaction, warm colors, modern lifestyle photography",
+        "نصيحة احترافية":  "professional workspace, laptop and notebook, clean desk, warm lighting, productivity and success concept",
+        "ترند تقني":        "futuristic technology concept, holographic display, glowing neon, modern city, innovation atmosphere",
     }
     style = IMAGE_STYLE.get(content_type, "modern technology concept, professional, clean design, social media post")
 
@@ -630,4 +771,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
